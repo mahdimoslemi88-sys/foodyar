@@ -167,7 +167,9 @@ const aiRunSchema = {
                     severity: { type: Type.STRING, enum: ['LOW', 'MED', 'HIGH'], nullable: true },
                     createdAt: { type: Type.NUMBER }
                 }
-            }
+            },
+            // FIX: Make insights nullable to handle cases where Gemini might not return it.
+            nullable: true 
         },
         actions: {
             type: Type.ARRAY,

@@ -23,8 +23,9 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({ isOpen, onClose, i
 
     // FIX: Add explicit type annotation to useMemo to resolve 'unknown' type errors when mapping categories.
     const availableCategories = useMemo<string[]>(() => {
-        const allCategories = useRestaurantStore.getState().menu.map(item => item.category);
-        return [...new Set(allCategories)];
+        // FIX: Explicitly typing `item` as MenuItem and creating a Set<string> helps TypeScript correctly infer the return type.
+        const allCategories = useRestaurantStore.getState().menu.map((item: MenuItem) => item.category);
+        return [...new Set<string>(allCategories)];
     }, []);
 
     const getCompatibleUnits = (baseUnit: string) => {

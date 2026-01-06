@@ -1,126 +1,170 @@
-import React, { createContext, useState, useContext, ReactNode, useMemo, useCallback, useEffect } from 'react';
-import { User } from '../types';
-import { isDemoMode } from '../config/features';
-import { LocalStorageAuthRepository } from '../repositories/localStorageAuthRepository';
-import { IAuthRepository } from '../repositories/interfaces';
+import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo } from 'react';
+import { supabase } from '../services/supabase';
+import { User, View } from '../types';
+import { AuthError, Session } from '@supabase/supabase-js';
 
-const defaultUsers: User[] = [];
+// Supabase returns snake_case, our app uses camelCase.
+// This profile type is assumed to match your DB schema.
+interface Profile {
+  id: string;
+  full_name: string;
+  role: 'manager' | 'cashier' | 'chef' | 'server';
+  permissions: View[];
+  is_active: boolean;
+}
 
 interface AuthContextType {
   currentUser: User | null;
-  users: User[];
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
-  registerUser: (newUser: Omit<User, 'id' | 'createdAt'>) => Promise<void>;
+  logout: () => Promise<void>;
+  registerUser: (newUser: Omit<User, 'id' | 'createdAt' | 'isDeleted' | 'password'> & { password?: string }) => Promise<void>;
   updateUser: (userId: string, updates: Partial<User>) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
-  checkSystemStatus: () => 'NOT_INITIALIZED' | 'INITIALIZED';
-  resetAuth: () => Promise<void>;
+  checkSystemStatus: () => Promise<'NOT_INITIALIZED' | 'INITIALIZED'>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Instantiate the repository. In a larger app, this might be provided via dependency injection.
-const authRepository: IAuthRepository = new LocalStorageAuthRepository();
-
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>(defaultUsers);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Map Supabase profile to application User
+  const mapProfileToUser = (profile: Profile, sessionUser: any): User => ({
+    id: profile.id,
+    fullName: profile.full_name,
+    username: sessionUser.email || sessionUser.phone || '', // username is email/phone in supabase
+    password: '', // Don't store password
+    role: profile.role,
+    permissions: profile.permissions,
+    isActive: profile.is_active,
+    createdAt: new Date(sessionUser.created_at).getTime(),
+  });
+
   useEffect(() => {
-    const loadAuthData = async () => {
-        setLoading(true);
-        const [loadedUsers, loadedCurrentUser] = await Promise.all([
-            authRepository.loadUsers(),
-            authRepository.loadCurrentUser()
-        ]);
-        setUsers(loadedUsers);
-        setCurrentUser(loadedCurrentUser);
-        setLoading(false);
-    };
-    loadAuthData();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setLoading(true);
+      if (session?.user) {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching profile:', error);
+          setCurrentUser(null);
+        } else if (profile) {
+          setCurrentUser(mapProfileToUser(profile, session.user));
+        }
+      } else {
+        setCurrentUser(null);
+      }
+      setLoading(false);
+    });
+    
+    // Check for initial session on app load
+    const checkInitialSession = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if(!session) {
+            setLoading(false);
+        }
+    }
+    checkInitialSession();
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const checkSystemStatus = useCallback((): 'NOT_INITIALIZED' | 'INITIALIZED' => {
-    return users.filter(u => !u.isDeleted).length === 0 ? 'NOT_INITIALIZED' : 'INITIALIZED';
-  }, [users]);
-
-  const login = useCallback(async (username: string, password: string) => {
-    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase() && !u.isDeleted);
-
-    if (!user) {
-      throw new Error('کاربری با این نام کاربری یافت نشد.');
+  const checkSystemStatus = async (): Promise<'NOT_INITIALIZED' | 'INITIALIZED'> => {
+    const { count, error } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true });
+    
+    if (error) {
+        console.error("Error checking system status:", error);
+        return 'INITIALIZED'; // Fail safe
     }
     
-    const isADemoAccount = isDemoMode && ['manager@foodyar.com', 'chef@foodyar.com', 'cashier@foodyar.com'].includes(user.username.toLowerCase());
-    if (!isADemoAccount && user.password !== password) {
-      throw new Error('رمز عبور اشتباه است.');
-    }
-    
-    if (!user.isActive) {
-      throw new Error('حساب کاربری شما غیرفعال شده است.');
-    }
-    
-    setCurrentUser(user);
-    await authRepository.saveCurrentUser(user);
-  }, [users]);
+    return (count === 0) ? 'NOT_INITIALIZED' : 'INITIALIZED';
+  };
+  
+  const login = async (username: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email: username, password });
+    if (error) throw new Error('نام کاربری یا رمز عبور اشتباه است.');
+  };
 
-  const logout = useCallback(async () => {
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw new Error(error.message);
     setCurrentUser(null);
-    await authRepository.saveCurrentUser(null);
-  }, []);
+  };
+  
+  const registerUser = async (userData: Omit<User, 'id' | 'createdAt' | 'isDeleted' | 'password'> & { password?: string }) => {
+    if (!userData.password) throw new Error("رمز عبور برای کاربر جدید الزامی است.");
 
-  const resetAuth = useCallback(async () => {
-    setUsers([]);
-    setCurrentUser(null);
-    await authRepository.clear();
-  }, []);
+    // First, sign up the user in the auth schema
+    const { data, error } = await supabase.auth.signUp({
+        email: userData.username,
+        password: userData.password,
+        options: {
+            data: {
+                full_name: userData.fullName,
+            }
+        }
+    });
 
-  const registerUser = useCallback(async (userData: Omit<User, 'id' | 'createdAt'>) => {
-    const existingUser = users.find(u => u.username.toLowerCase() === userData.username.toLowerCase() && !u.isDeleted);
-    if (existingUser) {
-      throw new Error('این نام کاربری قبلا ثبت شده است.');
+    if (error) throw new Error(error.message);
+    if (!data.user) throw new Error("ثبت نام ناموفق بود، کاربر ایجاد نشد.");
+
+    // Then, insert their profile into the public `profiles` table
+    const { error: profileError } = await supabase.from('profiles').insert({
+        id: data.user.id,
+        full_name: userData.fullName,
+        role: userData.role,
+        permissions: userData.permissions,
+        is_active: userData.isActive,
+    });
+
+    if (profileError) {
+        console.error("Error creating profile:", profileError);
+        // Attempt to clean up the auth user if profile creation fails
+        await supabase.auth.admin.deleteUser(data.user.id);
+        throw new Error("خطا در ایجاد پروفایل کاربری. ممکن است این نام کاربری قبلا ثبت شده باشد.");
     }
-
-    const newUser: User = { ...userData, id: crypto.randomUUID(), createdAt: Date.now(), isDeleted: false };
     
-    const newUsers = [...users, newUser];
-    setUsers(newUsers);
-    await authRepository.saveUsers(newUsers);
+    // onAuthStateChange will handle setting the current user upon successful sign-up and login.
+  };
 
-    // FIX: Automatically log in the user upon successful registration
-    setCurrentUser(newUser);
-    await authRepository.saveCurrentUser(newUser);
-  }, [users]);
-
-  const updateUser = useCallback(async (userId: string, updates: Partial<User>) => {
-    const newUsers = users.map(u => (u.id === userId ? { ...u, ...updates } : u));
-    setUsers(newUsers);
-    await authRepository.saveUsers(newUsers);
+  const updateUser = async (userId: string, updates: Partial<User>) => {
+    const profileUpdates: Partial<Omit<Profile, 'id'>> = {};
+    if (updates.fullName) profileUpdates.full_name = updates.fullName;
+    if (updates.role) profileUpdates.role = updates.role;
+    if (updates.permissions) profileUpdates.permissions = updates.permissions;
+    if (updates.isActive !== undefined) profileUpdates.is_active = updates.isActive;
+    
+    const { error } = await supabase.from('profiles').update(profileUpdates).eq('id', userId);
+    if (error) throw new Error(error.message);
     
     if (currentUser?.id === userId) {
-        const updatedCurrentUser = { ...currentUser, ...updates };
-        setCurrentUser(updatedCurrentUser);
-        await authRepository.saveCurrentUser(updatedCurrentUser);
+        setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
     }
-  }, [users, currentUser]);
+  };
 
-  const deleteUser = useCallback(async (userId: string) => {
-      const newUsers = users.map(u => u.id === userId ? { ...u, isDeleted: true } : u);
-      setUsers(newUsers);
-      await authRepository.saveUsers(newUsers);
-
-      if (currentUser?.id === userId) {
-          setCurrentUser(null);
-          await authRepository.saveCurrentUser(null);
-      }
-  }, [users, currentUser]);
+  const deleteUser = async (userId: string) => {
+    // This is a soft delete by deactivating the user profile.
+    await updateUser(userId, { isActive: false });
+  };
   
-  const value: AuthContextType = useMemo(() => ({
+  const resetAuth = async () => {
+    // This function is for local development and should not be used in production
+    // as it does not clear Supabase users.
+    console.warn("resetAuth is a no-op when using Supabase provider.");
+  };
+
+  const value = useMemo(() => ({
     currentUser,
-    users: users.filter(u => !u.isDeleted),
+    users: [], // User list management should be handled by a dedicated admin view querying supabase
     loading,
     login,
     logout,
@@ -128,8 +172,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     updateUser,
     deleteUser,
     checkSystemStatus,
-    resetAuth,
-  }), [currentUser, users, loading, login, logout, registerUser, updateUser, deleteUser, checkSystemStatus, resetAuth]);
+    resetAuth, // Kept for interface consistency, but is a no-op
+  }), [currentUser, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

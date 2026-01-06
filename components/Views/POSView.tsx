@@ -27,8 +27,8 @@ export const POSView: React.FC = () => {
 
   const activeMenu = useMemo(() => menu.filter(m => !m.isDeleted), [menu]);
 
-  // FIX: Add explicit type annotation to categories to resolve 'unknown' type errors during mapping.
-  const categories: string[] = ['همه', ...Array.from(new Set(activeMenu.map(m => m.category)))];
+  // FIX: Add explicit type annotation to the Set generic to resolve 'unknown' type errors during mapping.
+  const categories: string[] = ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))];
 
   const filteredMenu = useMemo(() => {
     return activeMenu

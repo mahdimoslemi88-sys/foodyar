@@ -1,18 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { PERMISSIONS_LIST } from '../../types';
 import { User as UserIcon, Lock, Phone, ChefHat, Loader2, ArrowLeft } from 'lucide-react';
 
-interface AuthViewProps {
-    systemStatus: 'NOT_INITIALIZED' | 'INITIALIZED';
-}
-
-export const AuthView: React.FC<AuthViewProps> = ({ systemStatus }) => {
-    const { registerUser, login } = useAuth();
+export const AuthView: React.FC = () => {
+    const { registerUser, login, checkSystemStatus } = useAuth();
     const { showToast } = useToast();
     
-    const [mode, setMode] = useState<'login' | 'register' | 'forgotPassword'>('login');
+    const [systemStatus, setSystemStatus] = useState<'INITIALIZED' | 'NOT_INITIALIZED' | 'CHECKING'>('CHECKING');
+    const [mode, setMode] = useState<'login' | 'register'>('login');
     
     const [fullName, setFullName] = useState('');
     const [username, setUsername] = useState('');
@@ -21,6 +18,19 @@ export const AuthView: React.FC<AuthViewProps> = ({ systemStatus }) => {
     
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const check = async () => {
+            const status = await checkSystemStatus();
+            setSystemStatus(status);
+            if (status === 'NOT_INITIALIZED') {
+                setMode('register');
+            } else {
+                setMode('login');
+            }
+        };
+        check();
+    }, [checkSystemStatus]);
     
     const resetForm = () => {
         setError('');
@@ -40,16 +50,20 @@ export const AuthView: React.FC<AuthViewProps> = ({ systemStatus }) => {
         setLoading(true);
         try {
             const allPermissions = PERMISSIONS_LIST.map(p => p.id);
+            const isFirstUser = systemStatus === 'NOT_INITIALIZED';
+
             await registerUser({
                 username,
                 password,
                 fullName,
-                role: systemStatus === 'NOT_INITIALIZED' ? 'manager' : 'server',
-                permissions: systemStatus === 'NOT_INITIALIZED' ? allPermissions : ['pos'],
+                role: isFirstUser ? 'manager' : 'server', // First user is always manager
+                permissions: isFirstUser ? allPermissions : ['pos'],
                 isActive: true
             });
-            // FIX: The login call is removed. `registerUser` now handles automatic login.
-            showToast('حساب شما با موفقیت ایجاد و وارد شدید.', 'success');
+            // onAuthStateChange handles login after successful registration
+            showToast('حساب شما با موفقیت ایجاد شد. لطفا وارد شوید.', 'success');
+            setMode('login');
+            
         } catch (err: any) {
             setError(err.message || 'خطا در ایجاد حساب کاربری');
         } finally {
@@ -63,27 +77,12 @@ export const AuthView: React.FC<AuthViewProps> = ({ systemStatus }) => {
         setLoading(true);
         try {
             await login(username, password);
+            // onAuthStateChange handles successful login
         } catch (err: any) {
             setError(err.message || 'خطا در ورود');
         } finally {
             setLoading(false);
         }
-    };
-    
-    const handleForgotPassword = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
-        if (!username) {
-            setError('لطفا نام کاربری خود را وارد کنید.');
-            return;
-        }
-        setLoading(true);
-        // Simulate API call
-        setTimeout(() => {
-            setLoading(false);
-            showToast(`لینک بازیابی به ${username} ارسال شد (قابلیت نمایشی).`, 'success');
-            setMode('login');
-        }, 1500);
     };
     
     const Header = () => (
@@ -98,6 +97,14 @@ export const AuthView: React.FC<AuthViewProps> = ({ systemStatus }) => {
             </div>
         </div>
     );
+    
+    if (systemStatus === 'CHECKING') {
+      return (
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+            <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+        </div>
+      );
+    }
 
     const renderContent = () => {
         switch(mode) {
@@ -115,7 +122,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ systemStatus }) => {
                             </div>
                             <div className="relative">
                                 <Phone className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                <input type="text" placeholder="نام کاربری (موبایل)" value={username} onChange={e => setUsername(e.target.value)} required className="w-full bg-slate-50 border-none rounded-2xl p-4 pr-12 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-200" />
+                                <input type="email" placeholder="ایمیل" value={username} onChange={e => setUsername(e.target.value)} required className="w-full bg-slate-50 border-none rounded-2xl p-4 pr-12 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-200" />
                             </div>
                             <div className="relative">
                                 <Lock className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -126,37 +133,16 @@ export const AuthView: React.FC<AuthViewProps> = ({ systemStatus }) => {
                                 <input type="password" placeholder="تکرار رمز عبور" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required className="w-full bg-slate-50 border-none rounded-2xl p-4 pr-12 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-200" />
                             </div>
                             <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-slate-800 shadow-xl shadow-slate-300 transition-all active:scale-[0.98] flex items-center justify-center">
-                                {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'ثبت نام و ورود'}
+                                {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'ثبت نام'}
                             </button>
                         </form>
-                        <div className="text-center mt-6 pt-6 border-t border-slate-100">
-                             <button onClick={() => { setMode('login'); resetForm(); }} className="text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">
-                                قبلا ثبت نام کرده‌اید؟ <span className="text-indigo-600 hover:text-indigo-700">وارد شوید</span>
-                            </button>
-                        </div>
-                    </>
-                );
-
-            case 'forgotPassword':
-                 return (
-                    <>
-                        <h2 className="text-xl font-extrabold text-slate-800 text-center mb-2">بازیابی رمز عبور</h2>
-                        <p className="text-center text-sm text-slate-500 mb-6">نام کاربری خود را وارد کنید تا لینک بازیابی ارسال شود.</p>
-                        {error && <p className="bg-rose-50 text-rose-600 text-center text-sm font-bold py-2.5 rounded-xl mb-4">{error}</p>}
-                        <form onSubmit={handleForgotPassword} className="space-y-4">
-                            <div className="relative">
-                                <Phone className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                <input type="text" placeholder="نام کاربری (موبایل)" value={username} onChange={e => setUsername(e.target.value)} required className="w-full bg-slate-50 border-none rounded-2xl p-4 pr-12 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-200" />
+                        {systemStatus === 'INITIALIZED' && (
+                            <div className="text-center mt-6 pt-6 border-t border-slate-100">
+                                <button onClick={() => { setMode('login'); resetForm(); }} className="text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">
+                                    قبلا ثبت نام کرده‌اید؟ <span className="text-indigo-600 hover:text-indigo-700">وارد شوید</span>
+                                </button>
                             </div>
-                            <button type="submit" disabled={loading} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold text-lg hover:bg-slate-800 shadow-xl shadow-slate-300 transition-all active:scale-[0.98] flex items-center justify-center">
-                                {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : 'ارسال لینک'}
-                            </button>
-                        </form>
-                        <div className="text-center mt-6 pt-6 border-t border-slate-100">
-                             <button onClick={() => { setMode('login'); resetForm(); }} className="text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">
-                                بازگشت به <span className="text-indigo-600 hover:text-indigo-700">صفحه ورود</span>
-                            </button>
-                        </div>
+                        )}
                     </>
                 );
 
@@ -169,7 +155,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ systemStatus }) => {
                         <form onSubmit={handleLogin} className="space-y-4">
                             <div className="relative">
                                 <Phone className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                                <input type="text" placeholder="نام کاربری (موبایل)" value={username} onChange={e => setUsername(e.target.value)} required className="w-full bg-slate-50 border-none rounded-2xl p-4 pr-12 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-200" />
+                                <input type="email" placeholder="ایمیل" value={username} onChange={e => setUsername(e.target.value)} required className="w-full bg-slate-50 border-none rounded-2xl p-4 pr-12 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-200" />
                             </div>
                             <div className="relative">
                                 <Lock className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -181,14 +167,13 @@ export const AuthView: React.FC<AuthViewProps> = ({ systemStatus }) => {
                             </button>
                         </form>
                         <div className="text-center mt-6 pt-6 border-t border-slate-100 space-y-4">
-                             <button onClick={() => { setMode('forgotPassword'); resetForm(); setUsername(username); }} className="text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">
-                                رمز عبور خود را فراموش کرده‌اید؟
-                            </button>
-                            <p>
-                                <button onClick={() => { setMode('register'); resetForm(); }} className="text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">
-                                    حساب کاربری ندارید؟ <span className="text-indigo-600 hover:text-indigo-700">ایجاد حساب</span>
-                                </button>
-                            </p>
+                            {systemStatus === 'INITIALIZED' && (
+                                <p>
+                                    <button onClick={() => { setMode('register'); resetForm(); }} className="text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">
+                                        حساب کاربری ندارید؟ <span className="text-indigo-600 hover:text-indigo-700">ایجاد حساب</span>
+                                    </button>
+                                </p>
+                            )}
                         </div>
                     </>
                 );

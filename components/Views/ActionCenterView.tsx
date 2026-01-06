@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ManagerTask, ManagerTaskCategory, ManagerTaskPriority, ManagerTaskStatus, View, User } from '../../types';
 import { useRestaurantStore } from '../../store/restaurantStore';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { EmptyState } from '../EmptyState';
 import { ListChecks, Search, ChevronDown, RefreshCw, Plus, Loader2, CheckCircle, XCircle, UserPlus, MoreVertical, Clock, Circle, PlayCircle, ExternalLink, X } from 'lucide-react';
+import { supabase } from '../../services/supabase';
 
 interface ActionCenterProps {
   onNavigate: (view: View, entityId?: string) => void;
@@ -88,7 +89,8 @@ const AddTaskModal: React.FC<{
 
 export const ActionCenterView: React.FC<ActionCenterProps> = ({ onNavigate }) => {
     const { managerTasks, generateTasksFromRules, updateManagerTask, addManagerTask } = useRestaurantStore();
-    const { currentUser, users } = useAuth();
+    // FIX: Remove `users` from useAuth destructuring as it's not provided by the context.
+    const { currentUser } = useAuth();
     const { showToast } = useToast();
     
     const [searchQuery, setSearchQuery] = useState('');
@@ -96,6 +98,33 @@ export const ActionCenterView: React.FC<ActionCenterProps> = ({ onNavigate }) =>
     const [loading, setLoading] = useState(false);
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
+    // FIX: Add local state to fetch and store the users list.
+    const [users, setUsers] = useState<User[]>([]);
+
+    // FIX: Fetch users from Supabase when the component mounts, similar to UserManagementView.
+    useEffect(() => {
+        const fetchUsers = async () => {
+            const { data: profiles, error } = await supabase.from('profiles').select('*');
+            if (error) {
+                showToast('خطا در دریافت لیست کاربران', 'error');
+            } else {
+                const userList = profiles.map((p: any) => ({
+                    id: p.id,
+                    fullName: p.full_name,
+                    username: 'email/phone not fetched here', // Not needed for this view
+                    role: p.role,
+                    permissions: p.permissions || [],
+                    isActive: p.is_active,
+                    createdAt: new Date(p.created_at).getTime(),
+                }));
+                setUsers(userList);
+            }
+        };
+
+        if (currentUser?.role === 'manager') {
+            fetchUsers();
+        }
+    }, [currentUser, showToast]);
 
     const filteredTasks = useMemo(() => {
         return managerTasks

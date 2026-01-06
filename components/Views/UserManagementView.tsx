@@ -1,29 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useModal } from '../../contexts/ModalContext';
-import { User, View, PERMISSIONS_LIST } from '../../types';
-import { Users, Plus, Edit, Trash2, Key, ToggleLeft, ToggleRight, X, User as UserIcon, Lock, Check, ShieldCheck, ChefHat, Store } from 'lucide-react';
+import { User, View, PERMISSIONS_LIST, UserRole } from '../../types';
+import { Users, Plus, Edit, Trash2, Key, ToggleLeft, ToggleRight, X, User as UserIcon, Lock, Check, ShieldCheck, ChefHat, Store, Loader2 } from 'lucide-react';
 import { EmptyState } from '../EmptyState';
+import { supabase } from '../../services/supabase';
 
 export const UserManagementView: React.FC = () => {
-  const { users, registerUser, updateUser, deleteUser, currentUser } = useAuth();
+  const { registerUser, updateUser, deleteUser, currentUser } = useAuth();
   const { showToast } = useToast();
   const { showModal } = useModal();
+  
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState(false);
   
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState({ fullName: '', username: '', password: '' });
+  const [formData, setFormData] = useState({ fullName: '', username: '', password: '', role: 'server' as UserRole });
   const [selectedPermissions, setSelectedPermissions] = useState<Set<View>>(new Set());
+
+  useEffect(() => {
+      const fetchUsers = async () => {
+          setLoading(true);
+          const { data: profiles, error } = await supabase
+              .from('profiles')
+              .select('*');
+
+          if (error) {
+              showToast('خطا در دریافت لیست کاربران', 'error');
+              console.error(error);
+          } else {
+              // Map snake_case from db to camelCase for the app's User type
+              const userList = profiles.map((p: any) => ({
+                  id: p.id,
+                  fullName: p.full_name,
+                  username: 'email/phone not fetched here', // This data is in auth.users
+                  role: p.role,
+                  permissions: p.permissions || [],
+                  isActive: p.is_active,
+                  createdAt: new Date(p.created_at).getTime(),
+              }));
+              setUsers(userList);
+          }
+          setLoading(false);
+      };
+      fetchUsers();
+  }, []);
 
   const openUserModal = (user: User | null) => {
     setEditingUser(user);
     if (user) {
-      setFormData({ fullName: user.fullName, username: user.username, password: '' }); // Don't show old password
+      setFormData({ fullName: user.fullName, username: user.username, password: '', role: user.role });
     } else {
-      setFormData({ fullName: '', username: '', password: '' });
+      setFormData({ fullName: '', username: '', password: '', role: 'server' });
     }
     setIsUserModalOpen(true);
   };
@@ -44,27 +76,29 @@ export const UserManagementView: React.FC = () => {
         if (editingUser) { // Updating existing user
             const updates: Partial<User> = {
                 fullName: formData.fullName,
-                username: formData.username,
+                role: formData.role,
             };
-            if (formData.password) {
-                updates.password = formData.password;
-            }
             await updateUser(editingUser.id, updates);
+            setUsers(prev => prev.map(u => u.id === editingUser.id ? {...u, ...updates} : u));
             showToast('کاربر با موفقیت ویرایش شد.');
         } else { // Creating new user
             if (!formData.password) {
                 showToast('رمز عبور برای کاربر جدید الزامی است', 'error');
                 return;
             }
+            // Note: registerUser in Supabase context creates the user in auth and profiles.
+            // We might need to refetch the user list after this.
             await registerUser({
                 fullName: formData.fullName,
                 username: formData.username,
                 password: formData.password,
-                role: 'server', // Default role, can be changed visually
-                permissions: ['pos'], // Default permission for new user
+                role: formData.role,
+                permissions: ['pos'], // Default permission
                 isActive: true
             });
-            showToast('کاربر جدید با موفقیت اضافه شد.');
+            showToast('کاربر جدید با موفقیت اضافه شد. لیست به زودی رفرش می‌شود.');
+             // Simple refetch
+            setTimeout(() => window.location.reload(), 1500);
         }
         setIsUserModalOpen(false);
     } catch (error: any) {
@@ -75,6 +109,7 @@ export const UserManagementView: React.FC = () => {
   const handleSavePermissions = async () => {
       if (!editingUser) return;
       await updateUser(editingUser.id, { permissions: Array.from(selectedPermissions) });
+      setUsers(prev => prev.map(u => u.id === editingUser.id ? {...u, permissions: Array.from(selectedPermissions)} : u));
       showToast('دسترسی‌ها با موفقیت ذخیره شد.');
       setIsPermissionModalOpen(false);
   };
@@ -86,10 +121,11 @@ export const UserManagementView: React.FC = () => {
       }
       showModal(
           `حذف ${user.fullName}`,
-          'آیا از حذف این کاربر اطمینان دارید؟ این عمل غیرقابل بازگشت است.',
+          'آیا از حذف این کاربر اطمینان دارید؟ این عمل باعث غیرفعال شدن کاربر می‌شود.',
           async () => {
               await deleteUser(user.id);
-              showToast('کاربر با موفقیت حذف شد.', 'success');
+              setUsers(prev => prev.map(u => u.id === user.id ? {...u, isActive: false} : u));
+              showToast('کاربر با موفقیت غیرفعال شد.', 'success');
           }
       );
   };
@@ -100,6 +136,7 @@ export const UserManagementView: React.FC = () => {
           return;
       }
       await updateUser(user.id, { isActive: !user.isActive });
+      setUsers(prev => prev.map(u => u.id === user.id ? {...u, isActive: !u.isActive} : u));
       showToast(`کاربر ${user.fullName} ${!user.isActive ? 'فعال' : 'غیرفعال'} شد.`);
   };
 
@@ -123,6 +160,14 @@ export const UserManagementView: React.FC = () => {
       default: return <UserIcon className="w-4 h-4 text-slate-500" />;
     }
   };
+  
+   if(loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar p-6 md:p-12 pt-24 pb-32 md:pb-12 md:pt-12 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -196,8 +241,14 @@ export const UserManagementView: React.FC = () => {
                     </div>
                     <div className="p-6 space-y-4">
                         <input value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} placeholder="نام کامل" className="w-full bg-slate-50 p-4 rounded-xl font-bold" />
-                        <input value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} placeholder="نام کاربری (ایمیل)" className="w-full bg-slate-50 p-4 rounded-xl font-bold" />
-                        <input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder={editingUser ? 'رمز عبور جدید (اختیاری)' : 'رمز عبور'} className="w-full bg-slate-50 p-4 rounded-xl font-bold" />
+                        <input value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} placeholder="ایمیل" disabled={!!editingUser} className="w-full bg-slate-50 p-4 rounded-xl font-bold disabled:bg-slate-200" />
+                        <input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} placeholder={editingUser ? 'تغییر رمز عبور از پروفایل کاربر ممکن است' : 'رمز عبور'} disabled={!!editingUser} className="w-full bg-slate-50 p-4 rounded-xl font-bold disabled:bg-slate-200 disabled:cursor-not-allowed" />
+                        <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value as UserRole})} className="w-full p-4 bg-slate-50 rounded-xl font-bold">
+                            <option value="server">Server</option>
+                            <option value="cashier">Cashier</option>
+                            <option value="chef">Chef</option>
+                            <option value="manager">Manager</option>
+                        </select>
                     </div>
                     <div className="p-6 border-t"><button onClick={handleSaveUser} className="w-full py-4 bg-slate-900 text-white font-bold rounded-2xl">ذخیره</button></div>
                  </div>
