@@ -1,0 +1,3 @@
+## 2025-01-25 - [Zustand Store Re-renders and List Memoization]
+**Learning:** Components often use the entire store state or destructure it without selectors, causing unnecessary re-renders across the app. High-traffic views like POSView frequently re-calculate derived lists (like categories) and aggregate stats (cart totals) on every render, including during search typing.
+**Action:** Use `useMemo` for any derived data or reduction logic in render paths, especially in components that track input state (like search). Hoist helper functions that return static JSX outside the component to keep the render loop tight.
