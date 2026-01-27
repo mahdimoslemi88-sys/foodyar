@@ -11,7 +11,9 @@ interface Props {
 }
 
 export const CloseShiftModal: React.FC<Props> = ({ isOpen, onClose, shift }) => {
-    const { sales, closeShift } = useRestaurantStore();
+    // Optimization: Use individual selectors to prevent re-renders on unrelated store changes
+    const sales = useRestaurantStore(state => state.sales);
+    const closeShift = useRestaurantStore(state => state.closeShift);
     const { showToast } = useToast();
     
     const [actualCash, setActualCash] = useState<number>(0);

@@ -1,0 +1,3 @@
+## 2024-05-24 - [Zustand Selector Optimization & Environment Safety]
+**Learning:** Destructuring the entire Zustand store object (e.g., `const { a, b } = useStore()`) causes the component to re-render on *every* store update, even for unrelated fields. Using individual selectors (e.g., `const a = useStore(s => s.a)`) is critical for performance in apps with frequent background updates like audit logs. Also, running `npm install` in a restricted environment can generate unwanted lockfiles that pollute the PR.
+**Action:** Always use individual selectors for Zustand state and actions. Be cautious with environment-altering commands like `npm install` and ensure auto-generated files like `package-lock.json` are removed before submission.

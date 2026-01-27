@@ -5,7 +5,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { Lock, ArrowLeft, Loader2 } from 'lucide-react';
 
 export const ShiftControlView: React.FC = () => {
-    const { startShift } = useRestaurantStore();
+    // Optimization: Use individual selector for the action
+    const startShift = useRestaurantStore(state => state.startShift);
     const { currentUser } = useAuth();
     const { showToast } = useToast();
     const [startingCash, setStartingCash] = useState<number>(0);
