@@ -12,11 +12,22 @@ import { CheckoutModal } from '../POS/CheckoutModal';
 import { ShiftControlView } from '../POS/ShiftControlView';
 import { CloseShiftModal } from '../POS/CloseShiftModal';
 
+// Helper to get item icon based on category - Hoisted outside to prevent recreation
+const getItemIcon = (cat: string) => {
+  if (cat.includes('نوشیدنی') || cat.includes('قهوه')) return <Coffee className="w-6 h-6" />;
+  if (cat.includes('پیتزا') || cat.includes('فست')) return <Pizza className="w-6 h-6" />;
+  return <Utensils className="w-6 h-6" />;
+};
+
 // Main POS Component
 export const POSView: React.FC = () => {
-  const { menu, shifts, settings } = useRestaurantStore();
+  // Use individual selectors to prevent unnecessary re-renders when unrelated store state changes
+  const menu = useRestaurantStore(state => state.menu);
+  const shifts = useRestaurantStore(state => state.shifts);
+  const settings = useRestaurantStore(state => state.settings);
   
-  const currentShift = shifts.find(s => s.status === 'open');
+  // Memoize current shift to avoid repeated find() on every render
+  const currentShift = useMemo(() => shifts.find(s => s.status === 'open'), [shifts]);
 
   const [cart, setCart] = useState<{item: MenuItem, quantity: number}[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('همه');
@@ -27,13 +38,16 @@ export const POSView: React.FC = () => {
 
   const activeMenu = useMemo(() => menu.filter(m => !m.isDeleted), [menu]);
 
-  // FIX: Add explicit type annotation to the Set generic to resolve 'unknown' type errors during mapping.
-  const categories: string[] = ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))];
+  // Memoize categories list to avoid re-calculation and reference change on every render
+  const categories: string[] = useMemo(() => ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))], [activeMenu]);
 
+  // Optimized single-pass filter with hoisted string transformation
   const filteredMenu = useMemo(() => {
-    return activeMenu
-      .filter(m => selectedCategory === 'همه' || m.category === selectedCategory)
-      .filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const lowerQuery = searchQuery.toLowerCase();
+    return activeMenu.filter(m =>
+      (selectedCategory === 'همه' || m.category === selectedCategory) &&
+      m.name.toLowerCase().includes(lowerQuery)
+    );
   }, [activeMenu, selectedCategory, searchQuery]);
 
   const addToCart = (item: MenuItem) => {
@@ -63,14 +77,9 @@ export const POSView: React.FC = () => {
     });
   };
 
-  const total = cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
-  const totalItems = cart.reduce((sum, c) => sum + c.quantity, 0);
-  
-  const getItemIcon = (cat: string) => {
-    if (cat.includes('نوشیدنی') || cat.includes('قهوه')) return <Coffee className="w-6 h-6" />;
-    if (cat.includes('پیتزا') || cat.includes('فست')) return <Pizza className="w-6 h-6" />;
-    return <Utensils className="w-6 h-6" />;
-  };
+  // Memoize aggregate calculations based on cart state
+  const total = useMemo(() => cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0), [cart]);
+  const totalItems = useMemo(() => cart.reduce((sum, c) => sum + c.quantity, 0), [cart]);
 
   return (
     <div className="flex h-full w-full bg-[#F3F4F6] overflow-hidden relative">
