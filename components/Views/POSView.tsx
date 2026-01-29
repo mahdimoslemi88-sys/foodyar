@@ -12,9 +12,19 @@ import { CheckoutModal } from '../POS/CheckoutModal';
 import { ShiftControlView } from '../POS/ShiftControlView';
 import { CloseShiftModal } from '../POS/CloseShiftModal';
 
+// Helper to get category icons - defined outside to prevent re-creation during renders
+const getItemIcon = (cat: string) => {
+  if (cat.includes('نوشیدنی') || cat.includes('قهوه')) return <Coffee className="w-6 h-6" />;
+  if (cat.includes('پیتزا') || cat.includes('فست')) return <Pizza className="w-6 h-6" />;
+  return <Utensils className="w-6 h-6" />;
+};
+
 // Main POS Component
 export const POSView: React.FC = () => {
-  const { menu, shifts, settings } = useRestaurantStore();
+  // Use individual selectors to prevent unnecessary re-renders when other parts of the store change
+  const menu = useRestaurantStore(state => state.menu);
+  const shifts = useRestaurantStore(state => state.shifts);
+  const settings = useRestaurantStore(state => state.settings);
   
   const currentShift = shifts.find(s => s.status === 'open');
 
@@ -27,13 +37,22 @@ export const POSView: React.FC = () => {
 
   const activeMenu = useMemo(() => menu.filter(m => !m.isDeleted), [menu]);
 
-  // FIX: Add explicit type annotation to the Set generic to resolve 'unknown' type errors during mapping.
-  const categories: string[] = ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))];
+  // Memoize categories to avoid re-calculating the unique list on every render
+  // Impact: Reduces O(N) mapping and Set creation to only when activeMenu changes
+  const categories = useMemo<string[]>(() => {
+    return ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))];
+  }, [activeMenu]);
 
   const filteredMenu = useMemo(() => {
-    return activeMenu
-      .filter(m => selectedCategory === 'همه' || m.category === selectedCategory)
-      .filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    // Hoist toLowerCase() to avoid repeated transformations inside the filter loop
+    // Impact: Reduces number of string transformations by O(N)
+    const normalizedQuery = searchQuery.toLowerCase();
+
+    // Combine multiple filter passes into a single pass for better performance
+    return activeMenu.filter(m =>
+      (selectedCategory === 'همه' || m.category === selectedCategory) &&
+      m.name.toLowerCase().includes(normalizedQuery)
+    );
   }, [activeMenu, selectedCategory, searchQuery]);
 
   const addToCart = (item: MenuItem) => {
@@ -63,15 +82,11 @@ export const POSView: React.FC = () => {
     });
   };
 
-  const total = cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
-  const totalItems = cart.reduce((sum, c) => sum + c.quantity, 0);
+  // Memoize total calculations to avoid re-reducing the cart array on every render
+  // Impact: Improves performance as cart size grows; prevents unnecessary recalculations
+  const total = useMemo(() => cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0), [cart]);
+  const totalItems = useMemo(() => cart.reduce((sum, c) => sum + c.quantity, 0), [cart]);
   
-  const getItemIcon = (cat: string) => {
-    if (cat.includes('نوشیدنی') || cat.includes('قهوه')) return <Coffee className="w-6 h-6" />;
-    if (cat.includes('پیتزا') || cat.includes('فست')) return <Pizza className="w-6 h-6" />;
-    return <Utensils className="w-6 h-6" />;
-  };
-
   return (
     <div className="flex h-full w-full bg-[#F3F4F6] overflow-hidden relative">
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden pt-20 md:pt-0">
