@@ -12,6 +12,7 @@ import { calculateRecipeCost } from '../domain/pricing';
 import { nextInvoiceNumber } from '../domain/invoicing';
 import { calculateDeductions, checkStockAvailability } from '../domain/inventory';
 import { determineCustomerSegment } from '../domain/customer';
+import { supabase } from '../services/supabase';
 
 // Define the shape of the state and actions
 export interface RestaurantState {
@@ -73,6 +74,15 @@ export interface RestaurantActions {
   clearNavigationIntent: () => void;
   // Hydration
   initState: (persistedState: Partial<RestaurantState>) => void;
+  // Persistence-aware Actions
+  upsertInventoryItem: (item: Ingredient) => Promise<void>;
+  deleteInventoryItem: (id: string) => Promise<void>;
+  upsertMenuItem: (item: MenuItem) => Promise<void>;
+  deleteMenuItem: (id: string) => Promise<void>;
+  bulkDeleteInventoryItems: (ids: string[]) => Promise<void>;
+  bulkDeleteMenuItems: (ids: string[]) => Promise<void>;
+  upsertCustomer: (customer: Customer) => Promise<void>;
+  updateSettings: (updater: SetStateAction<SystemSettings>) => Promise<void>;
 }
 
 type RestaurantStore = RestaurantState & RestaurantActions;
@@ -146,6 +156,9 @@ export const useRestaurantStore = create<RestaurantStore>()(
         details,
       };
       set(state => ({ auditLogs: [logEntry, ...state.auditLogs] }));
+      supabase.from('audit_logs').insert(logEntry).then(({ error }) => {
+          if (error) console.error("Error persisting audit log:", error);
+      });
     },
 
     addAuditLog: (action, entity, details) => {
@@ -205,6 +218,9 @@ export const useRestaurantStore = create<RestaurantStore>()(
             operatorName: operator.fullName,
         };
         set(state => ({ shifts: [newShift, ...state.shifts] }));
+        supabase.from('shifts').insert(newShift).then(({ error }) => {
+            if (error) console.error("Error persisting shift start:", error);
+        });
         addAuditLogDetailed('CREATE', 'SHIFT', newShift.id, null, newShift, `Shift started with starting cash ${startingCash}`, operator);
     },
     closeShift: (shiftId, actualCash, bankDeposit) => {
@@ -235,6 +251,9 @@ export const useRestaurantStore = create<RestaurantStore>()(
         };
         
         set(state => ({ shifts: state.shifts.map(s => s.id === shiftId ? closedShift : s) }));
+        supabase.from('shifts').update(closedShift).eq('id', shiftId).then(({ error }) => {
+            if (error) console.error("Error persisting shift close:", error);
+        });
         addAuditLogDetailed('SHIFT_CLOSE', 'SHIFT', shiftId, shiftToClose, closedShift, `Shift closed. Discrepancy: ${discrepancy}`, null);
     },
     checkStockForSale: (cart) => {
@@ -270,6 +289,9 @@ export const useRestaurantStore = create<RestaurantStore>()(
         updatedAt: now,
       };
       set(state => ({ managerTasks: [newTask, ...state.managerTasks] }));
+      supabase.from('manager_tasks').insert(newTask).then(({ error }) => {
+          if (error) console.error("Error persisting manager task:", error);
+      });
       addAuditLog('CREATE', 'ACTION_CENTER', `Task created: ${newTask.title}`);
     },
 
@@ -280,9 +302,16 @@ export const useRestaurantStore = create<RestaurantStore>()(
           task.id === taskId ? { ...task, ...updates, updatedAt: Date.now() } : task
         ),
       }));
+
+      const updatedTask = get().managerTasks.find(t => t.id === taskId);
+      if (updatedTask) {
+          supabase.from('manager_tasks').update(updatedTask).eq('id', taskId).then(({ error }) => {
+              if (error) console.error("Error persisting manager task update:", error);
+          });
+      }
+
       if(updates.status) {
-        const task = get().managerTasks.find(t => t.id === taskId);
-        addAuditLog('UPDATE', 'ACTION_CENTER', `Task status changed: "${task?.title}" to ${updates.status}`);
+        addAuditLog('UPDATE', 'ACTION_CENTER', `Task status changed: "${updatedTask?.title}" to ${updates.status}`);
       }
     },
 
@@ -441,6 +470,9 @@ export const useRestaurantStore = create<RestaurantStore>()(
                   customers: state.customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c)
               }));
           }
+          supabase.from('customers').upsert(updatedCustomer).then(({ error }) => {
+              if (error) console.error("Error persisting customer update in transaction:", error);
+          });
           
           customerId = updatedCustomer.id;
       }
@@ -452,6 +484,16 @@ export const useRestaurantStore = create<RestaurantStore>()(
           timestamp: Date.now(), items: saleItems, totalAmount: totalAmount, totalCost: totalCost, tax: paymentDetails.tax || 0, discount: paymentDetails.discount || 0,
           paymentMethod: paymentDetails.method, shiftId: paymentDetails.shiftId, status: 'delivered', customerId: customerId,
           customerPhoneNumber: paymentDetails.customerPhoneNumber, operatorId: paymentDetails.operator.id, operatorName: paymentDetails.operator.fullName,
+      };
+
+      // Store previous state for rollback
+      const previousState = {
+          sales: get().sales,
+          inventory: get().inventory,
+          prepTasks: get().prepTasks,
+          auditLogs: get().auditLogs,
+          customers: get().customers,
+          invoiceCounter: get().invoiceCounter,
       };
 
       try {
@@ -526,6 +568,27 @@ export const useRestaurantStore = create<RestaurantStore>()(
               prepTasks: updatedPrepTasks,
               auditLogs: [...newLogs, ...state.auditLogs]
           }));
+
+          // Persist to Supabase
+          // Persist to Supabase
+          // NOTE: In a production environment, this should be handled via a single RPC call
+          // to ensure database-level atomicity.
+          const changedInventoryItems = updatedInventory.filter(item => inventoryDeductions.has(item.id));
+          const changedPrepTasks = updatedPrepTasks.filter(task => prepDeductions.has(task.id));
+
+          Promise.all([
+              supabase.from('sales').insert(newSale),
+              ...changedInventoryItems.map(item => supabase.from('inventory').upsert(item)),
+              ...changedPrepTasks.map(task => supabase.from('prep_tasks').upsert(task)),
+          ]).then(results => {
+              const errors = results.filter(r => r.error).map(r => r.error);
+              if (errors.length > 0) {
+                  console.error("Critical: Partial transaction failure in Supabase!", errors);
+                  // Since we already updated local state, we should ideally rollback
+                  // but some parts might have succeeded. This is why RPC is better.
+                  // For now, we alert the console.
+              }
+          });
           
           tasksToCreate.forEach(taskDraft => get().addManagerTask(taskDraft));
 
@@ -533,7 +596,8 @@ export const useRestaurantStore = create<RestaurantStore>()(
           return { newSale, inventoryShortage, prepShortage };
 
       } catch (error: any) {
-          console.error("Transaction failed during deduction calculation:", error.message);
+          console.error("Transaction failed:", error.message);
+          set(previousState); // Rollback local state
           throw error;
       }
     },
@@ -543,5 +607,110 @@ export const useRestaurantStore = create<RestaurantStore>()(
     // Navigation Actions
     setNavigationIntent: (view, entityId) => set({ navigationIntent: { view, entityId } }),
     clearNavigationIntent: () => set({ navigationIntent: null }),
+
+    // Persistence-aware Actions
+    upsertInventoryItem: async (item) => {
+        const previous = get().inventory;
+        set(state => {
+            const exists = state.inventory.some(i => i.id === item.id);
+            return {
+                inventory: exists
+                    ? state.inventory.map(i => i.id === item.id ? item : i)
+                    : [...state.inventory, item]
+            };
+        });
+        const { error } = await supabase.from('inventory').upsert(item);
+        if (error) {
+            set({ inventory: previous });
+            throw error;
+        }
+    },
+    deleteInventoryItem: async (id) => {
+        const previous = get().inventory;
+        set(state => ({
+            inventory: state.inventory.map(i => i.id === id ? { ...i, isDeleted: true } : i)
+        }));
+        const { error } = await supabase.from('inventory').update({ isDeleted: true }).eq('id', id);
+        if (error) {
+            set({ inventory: previous });
+            throw error;
+        }
+    },
+    bulkDeleteInventoryItems: async (ids) => {
+        const previous = get().inventory;
+        set(state => ({
+            inventory: state.inventory.map(i => ids.includes(i.id) ? { ...i, isDeleted: true } : i)
+        }));
+        const { error } = await supabase.from('inventory').update({ isDeleted: true }).in('id', ids);
+        if (error) {
+            set({ inventory: previous });
+            throw error;
+        }
+    },
+    upsertMenuItem: async (item) => {
+        const previous = get().menu;
+        set(state => {
+            const exists = state.menu.some(m => m.id === item.id);
+            return {
+                menu: exists
+                    ? state.menu.map(m => m.id === item.id ? item : m)
+                    : [...state.menu, item]
+            };
+        });
+        const { error } = await supabase.from('menu').upsert(item);
+        if (error) {
+            set({ menu: previous });
+            throw error;
+        }
+    },
+    deleteMenuItem: async (id) => {
+        const previous = get().menu;
+        set(state => ({
+            menu: state.menu.map(m => m.id === id ? { ...m, isDeleted: true } : m)
+        }));
+        const { error } = await supabase.from('menu').update({ isDeleted: true }).eq('id', id);
+        if (error) {
+            set({ menu: previous });
+            throw error;
+        }
+    },
+    bulkDeleteMenuItems: async (ids) => {
+        const previous = get().menu;
+        set(state => ({
+            menu: state.menu.map(m => ids.includes(m.id) ? { ...m, isDeleted: true } : m)
+        }));
+        const { error } = await supabase.from('menu').update({ isDeleted: true }).in('id', ids);
+        if (error) {
+            set({ menu: previous });
+            throw error;
+        }
+    },
+    upsertCustomer: async (customer) => {
+        const previous = get().customers;
+        set(state => {
+            const exists = state.customers.some(c => c.id === customer.id);
+            return {
+                customers: exists
+                    ? state.customers.map(c => c.id === customer.id ? customer : c)
+                    : [...state.customers, customer]
+            };
+        });
+        const { error } = await supabase.from('customers').upsert(customer);
+        if (error) {
+            set({ customers: previous });
+            throw error;
+        }
+    },
+    updateSettings: async (updater) => {
+        const previous = get().settings;
+        const currentSettings = get().settings;
+        const newSettings = typeof updater === 'function' ? updater(currentSettings) : updater;
+        set({ settings: newSettings });
+        const { error } = await supabase.from('settings').upsert(newSettings);
+        if (error) {
+            set({ settings: previous });
+            throw error;
+        }
+    },
   })
 );

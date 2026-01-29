@@ -28,7 +28,7 @@ export const POSView: React.FC = () => {
   const activeMenu = useMemo(() => menu.filter(m => !m.isDeleted), [menu]);
 
   // FIX: Add explicit type annotation to the Set generic to resolve 'unknown' type errors during mapping.
-  const categories: string[] = ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))];
+  const categories: string[] = useMemo(() => ['همه', ...new Set<string>(activeMenu.map((m: MenuItem) => m.category))], [activeMenu]);
 
   const filteredMenu = useMemo(() => {
     return activeMenu
@@ -63,8 +63,8 @@ export const POSView: React.FC = () => {
     });
   };
 
-  const total = cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
-  const totalItems = cart.reduce((sum, c) => sum + c.quantity, 0);
+  const total = useMemo(() => cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0), [cart]);
+  const totalItems = useMemo(() => cart.reduce((sum, c) => sum + c.quantity, 0), [cart]);
   
   const getItemIcon = (cat: string) => {
     if (cat.includes('نوشیدنی') || cat.includes('قهوه')) return <Coffee className="w-6 h-6" />;

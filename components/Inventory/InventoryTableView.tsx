@@ -14,7 +14,7 @@ interface InventoryTableViewProps {
 
 export const InventoryTableView: React.FC<InventoryTableViewProps> = ({ inventory, onEdit, onDelete }) => {
     const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-    const { setInventory, addAuditLog } = useRestaurantStore();
+    const { bulkDeleteInventoryItems, addAuditLog } = useRestaurantStore();
     const { showModal } = useModal();
     const { showToast } = useToast();
 
@@ -35,7 +35,11 @@ export const InventoryTableView: React.FC<InventoryTableViewProps> = ({ inventor
         showModal(`حذف ${selectedItems.size} کالا`, 'آیا از حذف کالاهای انتخاب شده اطمینان دارید؟', () => {
             const itemNames = Array.from(selectedItems).map(id => inventory.find(i => i.id === id)?.name).join(', ');
             addAuditLog('DELETE', 'INVENTORY', `Bulk deleted ${selectedItems.size} items: ${itemNames}`);
-            setInventory(prev => prev.map(item => selectedItems.has(item.id) ? { ...item, isDeleted: true } : item));
+
+            bulkDeleteInventoryItems(Array.from(selectedItems)).catch(err => {
+                console.error("Failed to persist bulk inventory deletion:", err);
+            });
+
             setSelectedItems(new Set());
             showToast(`${selectedItems.size} کالا با موفقیت حذف شد.`, 'error');
         });

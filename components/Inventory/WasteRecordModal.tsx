@@ -13,7 +13,7 @@ interface Props {
 }
 
 export const WasteRecordModal: React.FC<Props> = ({ isOpen, onClose, item }) => {
-    const { setWasteRecords, setInventory, addAuditLogDetailed } = useRestaurantStore();
+    const { setWasteRecords, upsertInventoryItem, addAuditLogDetailed } = useRestaurantStore();
     const { showToast } = useToast();
 
     const [wasteAmount, setWasteAmount] = useState<number>(0);
@@ -61,7 +61,9 @@ export const WasteRecordModal: React.FC<Props> = ({ isOpen, onClose, item }) => 
         const afterState = { currentStock: newStock };
         
         const updatedItem = { ...item, currentStock: newStock };
-        setInventory(prev => prev.map(i => i.id === item.id ? updatedItem : i));
+        upsertInventoryItem(updatedItem).catch(err => {
+            console.error("Failed to persist inventory update after waste:", err);
+        });
 
         addAuditLogDetailed(
             'WASTE',

@@ -48,7 +48,7 @@ const segmentFilters: { id: CustomerSegment | 'all', label: string }[] = [
 ];
 
 export const CustomersView: React.FC = () => {
-    const { customers, setCustomers, sales, menu } = useRestaurantStore();
+    const { customers, upsertCustomer, sales, menu } = useRestaurantStore();
     const { showToast } = useToast();
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'lastVisit' | 'totalSpent'>('lastVisit');
@@ -67,14 +67,16 @@ export const CustomersView: React.FC = () => {
         });
 
         if (updates.length > 0) {
-            setCustomers(currentCustomers => 
-                currentCustomers.map(c => {
-                    const updatedInfo = updates.find(u => u.id === c.id);
-                    return updatedInfo ? { ...c, segment: updatedInfo.segment } : c;
-                })
-            );
+            updates.forEach(update => {
+                const customer = customers.find(c => c.id === update.id);
+                if (customer) {
+                    upsertCustomer({ ...customer, segment: update.segment }).catch(err => {
+                        console.error("Failed to persist customer segment update:", err);
+                    });
+                }
+            });
         }
-    }, [customers, setCustomers]);
+    }, [customers, upsertCustomer]);
 
     useEffect(() => {
         setSelectedCustomers(new Set());
@@ -108,19 +110,25 @@ export const CustomersView: React.FC = () => {
     }, [customers, selectedCustomers]);
 
     const handleEditName = (customerId: string) => {
-        const currentName = customers.find(c => c.id === customerId)?.fullName || '';
+        const customer = customers.find(c => c.id === customerId);
+        const currentName = customer?.fullName || '';
         const newName = prompt('نام جدید مشتری را وارد کنید:', currentName);
-        if (newName !== null) {
-            setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, fullName: newName.trim() } : c));
+        if (newName !== null && customer) {
+            upsertCustomer({ ...customer, fullName: newName.trim() }).catch(err => {
+                console.error("Failed to persist customer name update:", err);
+            });
         }
     };
 
     const handleAddPoints = (customerId: string) => {
+        const customer = customers.find(c => c.id === customerId);
         const pointsStr = prompt('تعداد امتیاز برای افزودن را وارد کنید:');
-        if (pointsStr) {
+        if (pointsStr && customer) {
             const pointsToAdd = parseInt(pointsStr, 10);
             if (!isNaN(pointsToAdd) && pointsToAdd > 0) {
-                setCustomers(prev => prev.map(c => c.id === customerId ? { ...c, loyaltyPoints: c.loyaltyPoints + pointsToAdd } : c));
+                upsertCustomer({ ...customer, loyaltyPoints: customer.loyaltyPoints + pointsToAdd }).catch(err => {
+                    console.error("Failed to persist customer points update:", err);
+                });
                 showToast(`${pointsToAdd} امتیاز با موفقیت اضافه شد.`, 'success');
             } else {
                 showToast('لطفا یک عدد صحیح مثبت وارد کنید.', 'error');

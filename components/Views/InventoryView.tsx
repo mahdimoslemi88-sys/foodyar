@@ -15,7 +15,7 @@ import { InventoryCardView } from '../Inventory/InventoryCardView';
 import { InventoryTableView } from '../Inventory/InventoryTableView';
 
 export const InventoryView: React.FC = () => {
-  const { inventory, setInventory, addAuditLog, navigationIntent, clearNavigationIntent } = useRestaurantStore();
+  const { inventory, deleteInventoryItem, addAuditLog, navigationIntent, clearNavigationIntent } = useRestaurantStore();
   const { showModal } = useModal();
   const { showToast } = useToast();
 
@@ -65,7 +65,10 @@ export const InventoryView: React.FC = () => {
         const itemToDelete = inventory.find(i => i.id === id);
         if(itemToDelete) {
             addAuditLog('DELETE', 'INVENTORY', `Deleted item: ${itemToDelete.name}`);
-            setInventory(prev => prev.map(i => i.id === id ? { ...i, isDeleted: true } : i));
+            deleteInventoryItem(id).catch(err => {
+                console.error("Failed to persist inventory deletion:", err);
+                showToast("خطا در حذف کالا از سرور.", "error");
+            });
             showToast('کالا با موفقیت حذف شد.', 'error');
         }
     });

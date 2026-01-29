@@ -33,7 +33,7 @@ const validationRules: ValidationRules<Partial<Ingredient>> = {
 
 
 export const InventoryItemModal: React.FC<Props> = ({ isOpen, onClose, itemToEdit }) => {
-    const { suppliers, setInventory, addAuditLogDetailed, auditLogs, setNavigationIntent } = useRestaurantStore();
+    const { suppliers, upsertInventoryItem, addAuditLogDetailed, auditLogs, setNavigationIntent } = useRestaurantStore();
     const { showToast } = useToast();
 
     const [formData, setFormData] = useState<Partial<Ingredient>>({});
@@ -99,7 +99,10 @@ export const InventoryItemModal: React.FC<Props> = ({ isOpen, onClose, itemToEdi
                 `ویرایش دستی آیتم: ${updatedItem.name}`,
                 null
             );
-            setInventory(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+            upsertInventoryItem(updatedItem).catch(err => {
+                console.error("Failed to persist inventory update:", err);
+                showToast("خطا در ذخیره‌سازی تغییرات در سرور.", "error");
+            });
             showToast('کالا با موفقیت ویرایش شد.');
         } else {
             const cost = Number(formData.costPerUnit) || 0;
@@ -117,7 +120,10 @@ export const InventoryItemModal: React.FC<Props> = ({ isOpen, onClose, itemToEdi
                 customUnitConversions: formData.customUnitConversions || {},
             };
             addAuditLogDetailed('CREATE', 'INVENTORY', newItem.id, null, newItem, `ایجاد آیتم جدید: ${newItem.name}`, null);
-            setInventory(prev => [...prev, newItem]);
+            upsertInventoryItem(newItem).catch(err => {
+                console.error("Failed to persist new inventory item:", err);
+                showToast("خطا در ذخیره‌سازی کالای جدید در سرور.", "error");
+            });
             showToast('کالای جدید با موفقیت اضافه شد.');
         }
         onClose();

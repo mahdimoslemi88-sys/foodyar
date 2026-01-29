@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useRestaurantStore } from '../store/restaurantStore';
 import { useToast } from '../contexts/ToastContext';
 import { ChefHat, ShoppingBasket, Menu as MenuIcon, PartyPopper, ArrowLeft } from 'lucide-react';
-import { Ingredient } from '../types';
+import { Ingredient, MenuItem } from '../types';
 
 interface OnboardingWizardProps {
   onComplete: () => void;
@@ -10,7 +10,7 @@ interface OnboardingWizardProps {
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }) => {
   const [step, setStep] = useState(1);
-  const { setInventory, setMenu } = useRestaurantStore();
+  const { upsertInventoryItem, upsertMenuItem } = useRestaurantStore();
   const { showToast } = useToast();
 
   const [invName, setInvName] = useState('گوشت چرخ کرده');
@@ -37,7 +37,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       purchaseHistory: [{ date: Date.now(), quantity: invStock, costPerUnit: invCost }],
       isDeleted: false,
     };
-    setInventory(prev => [...prev, newItem]);
+    upsertInventoryItem(newItem).catch(err => {
+        console.error("Failed to persist onboarding inventory:", err);
+    });
     showToast(`${invName} با موفقیت به انبار اضافه شد.`);
     setStep(3);
   };
@@ -47,14 +49,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       showToast('لطفا اطلاعات را کامل وارد کنید', 'error');
       return;
     }
-    const newItem = {
+    const newItem: MenuItem = {
       id: crypto.randomUUID(),
       name: menuName,
       price: menuPrice,
       category: menuCat,
-      recipe: []
+      recipe: [],
+      isDeleted: false
     };
-    setMenu(prev => [...prev, newItem]);
+    upsertMenuItem(newItem).catch(err => {
+        console.error("Failed to persist onboarding menu item:", err);
+    });
     showToast(`${menuName} با موفقیت به منو اضافه شد.`);
     setStep(4);
   };

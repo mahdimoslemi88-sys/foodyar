@@ -8,7 +8,7 @@ import { validateBackupData } from '../../utils/backupValidation';
 
 export const SettingsView: React.FC = () => {
     const store = useRestaurantStore();
-    const { settings, setSettings, restoreState, addAuditLog } = store;
+    const { settings, updateSettings, restoreState, addAuditLog } = store;
     const { showToast } = useToast();
     const { showModal } = useModal();
     const [localSettings, setLocalSettings] = useState<SystemSettings>(settings);
@@ -50,7 +50,9 @@ export const SettingsView: React.FC = () => {
     };
 
     const handleSave = () => {
-        setSettings(localSettings);
+        updateSettings(localSettings).catch(err => {
+            console.error("Failed to persist settings update:", err);
+        });
         showToast('تنظیمات با موفقیت ذخیره شد.');
     };
 

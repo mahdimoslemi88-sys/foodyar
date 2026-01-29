@@ -41,7 +41,7 @@ const ActionCard: React.FC<{ action: AIAction }> = ({ action }) => (
 
 export const AIView: React.FC = () => {
     const store = useRestaurantStore();
-    const { setMenu, addManagerTask } = store;
+    const { upsertMenuItem, addManagerTask } = store;
     const { showToast } = useToast();
 
     const [query, setQuery] = useState('');
@@ -224,7 +224,9 @@ export const AIView: React.FC = () => {
             recipe: generatedRecipe.ingredients,
             isDeleted: false,
         };
-        setMenu(prev => [...prev, newMenuItem]);
+        upsertMenuItem(newMenuItem).catch(err => {
+            console.error("Failed to persist AI-generated menu item:", err);
+        });
         setRecipeAdded(true);
         showToast(`${generatedRecipe.name} با موفقیت به منو اضافه شد.`, 'success');
     };

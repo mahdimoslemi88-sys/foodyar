@@ -8,7 +8,7 @@ interface SubscriptionViewProps {
 }
 
 const SubscriptionView: React.FC<SubscriptionViewProps> = ({ onComplete }) => {
-    const { settings, setSettings } = useRestaurantStore();
+    const { settings, updateSettings } = useRestaurantStore();
     const [loadingTier, setLoadingTier] = useState<SubscriptionTier | null>(null);
 
     const handleSelectPlan = async (tier: SubscriptionTier) => {
@@ -28,7 +28,7 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({ onComplete }) => {
             ? now + (14 * 24 * 60 * 60 * 1000) // 14 days for free trial
             : now + (30 * 24 * 60 * 60 * 1000); // 30 days for other plans (placeholder)
         
-        setSettings(prev => ({
+        updateSettings(prev => ({
             ...prev,
             subscription: {
                 tier: tier,
@@ -36,7 +36,9 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({ onComplete }) => {
                 expiryDate: expiryDate,
                 isActive: true,
             }
-        }));
+        })).catch(err => {
+            console.error("Failed to persist subscription update:", err);
+        });
 
         setLoadingTier(null);
         

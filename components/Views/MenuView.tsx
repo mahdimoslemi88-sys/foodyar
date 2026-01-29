@@ -9,7 +9,7 @@ import { MenuCardView } from '../Menu/MenuCardView';
 import { MenuTableView } from '../Menu/MenuTableView';
 
 export const MenuView: React.FC = () => {
-  const { menu, setMenu, addAuditLog, navigationIntent, clearNavigationIntent } = useRestaurantStore();
+  const { menu, deleteMenuItem, bulkDeleteMenuItems, addAuditLog, navigationIntent, clearNavigationIntent } = useRestaurantStore();
   const { showModal } = useModal();
 
   const [viewType, setViewType] = useState<'card' | 'table'>('card');
@@ -44,7 +44,9 @@ export const MenuView: React.FC = () => {
       const itemToDelete = menu.find(m => m.id === id);
       if(itemToDelete) {
         addAuditLog('DELETE', 'MENU', `Deleted menu item: ${itemToDelete.name}`);
-        setMenu(prev => prev.map(m => m.id === id ? { ...m, isDeleted: true } : m));
+        deleteMenuItem(id).catch(err => {
+            console.error("Failed to persist menu item deletion:", err);
+        });
       }
     });
   };
@@ -56,7 +58,11 @@ export const MenuView: React.FC = () => {
       () => {
         const itemNames = Array.from(selectedItems).map(id => menu.find(i => i.id === id)?.name).join(', ');
         addAuditLog('DELETE', 'MENU', `Bulk deleted ${selectedItems.size} items: ${itemNames}`);
-        setMenu(prev => prev.map(item => selectedItems.has(item.id) ? { ...item, isDeleted: true } : item));
+
+        bulkDeleteMenuItems(Array.from(selectedItems)).catch(err => {
+            console.error("Failed to persist bulk menu deletion:", err);
+        });
+
         setSelectedItems(new Set());
       }
     );

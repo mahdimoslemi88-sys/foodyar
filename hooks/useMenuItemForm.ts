@@ -15,7 +15,7 @@ interface FormErrors {
 }
 
 export const useMenuItemForm = (itemToEdit: MenuItem | null) => {
-    const { menu, setMenu, inventory, prepTasks, addAuditLogDetailed } = useRestaurantStore();
+    const { menu, upsertMenuItem, inventory, prepTasks, addAuditLogDetailed } = useRestaurantStore();
     const { showToast } = useToast();
     
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -101,7 +101,10 @@ export const useMenuItemForm = (itemToEdit: MenuItem | null) => {
                 `Updated menu item: ${name}.`,
                 null
             );
-            setMenu(prev => prev.map(m => m.id === editingId ? updatedItem : m));
+            upsertMenuItem(updatedItem).catch(err => {
+                console.error("Failed to persist menu item update:", err);
+                showToast("خطا در ذخیره‌سازی تغییرات منو در سرور.", "error");
+            });
             showToast('آیتم منو با موفقیت ویرایش شد.');
         } else {
             const newItem: MenuItem = { id: crypto.randomUUID(), ...newItemData, isDeleted: false };
@@ -114,7 +117,10 @@ export const useMenuItemForm = (itemToEdit: MenuItem | null) => {
                 `Created new menu item: ${name}`,
                 null
             );
-            setMenu(prev => [...prev, newItem]);
+            upsertMenuItem(newItem).catch(err => {
+                console.error("Failed to persist new menu item:", err);
+                showToast("خطا در ذخیره‌سازی آیتم جدید منو در سرور.", "error");
+            });
             showToast('آیتم جدید به منو اضافه شد.');
         }
         onClose();
