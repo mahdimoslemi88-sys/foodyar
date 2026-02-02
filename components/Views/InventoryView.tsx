@@ -38,7 +38,8 @@ export const InventoryView: React.FC = () => {
   const activeInventory = useMemo(() => inventory.filter(i => !i.isDeleted), [inventory]);
 
   const totalItems = activeInventory.length;
-  const totalValue = activeInventory.reduce((acc, i) => acc + calculateInventoryItemValue(i), 0);
+  // Optimization: Memoize total value calculation to prevent re-calculation on every render
+  const totalValue = useMemo(() => activeInventory.reduce((acc, i) => acc + calculateInventoryItemValue(i), 0), [activeInventory]);
 
   const filteredInventory = useMemo(() => {
     return activeInventory.filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()));

@@ -18,11 +18,15 @@ export const calculateRecipeCost = (
     return 0;
   }
 
+  // Pre-index for O(1) lookups instead of O(N) searches inside the loop
+  const inventoryMap = new Map(inventory.map(i => [i.id, i]));
+  const prepMap = new Map(prepTasks.map(p => [p.id, p]));
+
   const totalCost = recipe.reduce((total, item) => {
     let itemCost = 0;
     
     if (item.source === 'prep') {
-      const prepItem = prepTasks.find(p => p.id === item.ingredientId);
+      const prepItem = prepMap.get(item.ingredientId);
       if (prepItem?.costPerUnit) {
         const factor = getConversionFactor(item.unit, prepItem.unit);
         if (factor !== null) {
@@ -32,7 +36,7 @@ export const calculateRecipeCost = (
         }
       }
     } else { // 'inventory'
-      const ing = inventory.find(i => i.id === item.ingredientId);
+      const ing = inventoryMap.get(item.ingredientId);
       if (ing) {
         const costPerUsageUnit = getInventoryCostPerUsageUnit(ing);
         const factor = getConversionFactor(item.unit, ing.usageUnit);
