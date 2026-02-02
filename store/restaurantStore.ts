@@ -288,12 +288,17 @@ export const useRestaurantStore = create<RestaurantStore>()(
 
     generateTasksFromRules: () => {
         const { menu, inventory, sales, wasteRecords, managerTasks, addManagerTask } = get();
-        const openTasks = managerTasks.filter(t => t.status === 'open' || t.status === 'in_progress');
+        // Optimization: Use a Set for O(1) title lookups
+        const openTaskTitles = new Set(managerTasks
+            .filter(t => t.status === 'open' || t.status === 'in_progress')
+            .map(t => t.title)
+        );
         let newTasksCreated = 0;
 
         const createTaskIfNotExists = (title: string, taskDraft: Omit<ManagerTask, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'title'>) => {
-            if (!openTasks.some(t => t.title === title)) {
+            if (!openTaskTitles.has(title)) {
                 addManagerTask({ ...taskDraft, title });
+                openTaskTitles.add(title);
                 newTasksCreated++;
             }
         };
@@ -329,8 +334,18 @@ export const useRestaurantStore = create<RestaurantStore>()(
         // Rule 3: Sales drop check
         const today = new Date().setHours(0, 0, 0, 0);
         const sevenDaysAgo = today - 7 * 24 * 60 * 60 * 1000;
-        const salesToday = sales.filter(s => s.timestamp >= today).reduce((sum, s) => sum + s.totalAmount, 0);
-        const recentSales = sales.filter(s => s.timestamp >= sevenDaysAgo && s.timestamp < today);
+
+        // Optimization: Single pass to calculate both today's sales and recent sales
+        let salesToday = 0;
+        const recentSales: typeof sales = [];
+        sales.forEach(s => {
+            if (s.timestamp >= today) {
+                salesToday += s.totalAmount;
+            } else if (s.timestamp >= sevenDaysAgo) {
+                recentSales.push(s);
+            }
+        });
+
         if (recentSales.length > 3) { // Only run if there's enough data
             const averageDailySales = recentSales.reduce((sum, s) => sum + s.totalAmount, 0) / 7;
             if (salesToday > 0 && averageDailySales > 0 && salesToday < averageDailySales * 0.8) {
