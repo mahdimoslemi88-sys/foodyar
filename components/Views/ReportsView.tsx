@@ -9,10 +9,14 @@ import { EmptyState } from '../EmptyState';
 import { exportSales, exportExpenses } from '../../services/excelService';
 
 export const ReportsView: React.FC = () => {
-  const { 
-    sales, menu, expenses, setExpenses, shifts, 
-    wasteRecords, addAuditLog
-  } = useRestaurantStore();
+  const sales = useRestaurantStore(state => state.sales);
+  const menu = useRestaurantStore(state => state.menu);
+  const expenses = useRestaurantStore(state => state.expenses);
+  const setExpenses = useRestaurantStore(state => state.setExpenses);
+  const shifts = useRestaurantStore(state => state.shifts);
+  const wasteRecords = useRestaurantStore(state => state.wasteRecords);
+  const addAuditLog = useRestaurantStore(state => state.addAuditLog);
+
   const { showModal } = useModal();
   const { showToast } = useToast();
   
@@ -28,14 +32,16 @@ export const ReportsView: React.FC = () => {
     setIsMounted(true);
   }, []);
 
-  const totalRevenue = sales.filter(s => s.shiftId ? s.paymentMethod !== 'void' : true).reduce((acc, sale) => acc + sale.totalAmount, 0);
-  const totalCOGS = sales.reduce((acc, sale) => acc + sale.totalCost, 0);
-  const totalWasteLoss = wasteRecords.reduce((acc, w) => acc + w.costLoss, 0);
+  const totalRevenue = useMemo(() => sales.filter(s => s.shiftId ? s.paymentMethod !== 'void' : true).reduce((acc, sale) => acc + sale.totalAmount, 0), [sales]);
+  const totalCOGS = useMemo(() => sales.reduce((acc, sale) => acc + sale.totalCost, 0), [sales]);
+  const totalWasteLoss = useMemo(() => wasteRecords.reduce((acc, w) => acc + w.costLoss, 0), [wasteRecords]);
   
   const grossProfit = totalRevenue - totalCOGS;
-  const totalOpEx = expenses.reduce((acc, exp) => acc + exp.amount, 0);
+  const totalOpEx = useMemo(() => expenses.reduce((acc, exp) => acc + exp.amount, 0), [expenses]);
   
   const netProfit = grossProfit - totalOpEx - totalWasteLoss;
+
+  const closedShifts = useMemo(() => shifts.filter(s => s.status === 'closed'), [shifts]);
 
   const handleAddExpense = () => {
     if (!expTitle || expAmount <= 0) return;
@@ -70,13 +76,13 @@ export const ReportsView: React.FC = () => {
      return map[cat] || cat;
   };
   
-  const expenseByCategory = expenses.reduce((acc, exp) => {
+  const expenseByCategory = useMemo(() => expenses.reduce((acc, exp) => {
     const categoryLabel = getCategoryLabel(exp.category);
     acc[categoryLabel] = (acc[categoryLabel] || 0) + exp.amount;
     return acc;
-  }, {} as Record<string, number>);
+  }, {} as Record<string, number>), [expenses]);
 
-  const expenseChartData = Object.entries(expenseByCategory).map(([name, value]) => ({ name, value }));
+  const expenseChartData = useMemo(() => Object.entries(expenseByCategory).map(([name, value]) => ({ name, value })), [expenseByCategory]);
   const COLORS = ['#6366f1', '#818cf8', '#a5b4fc', '#c7d2fe', '#e0e7ff', '#eef2ff'];
 
   return (
@@ -259,7 +265,7 @@ export const ReportsView: React.FC = () => {
         <div className="bg-white rounded-[32px] shadow-xl shadow-slate-200/50 border border-slate-100 p-6">
              <h3 className="font-bold text-lg mb-4 text-slate-800">تاریخچه شیفت‌های بسته شده</h3>
              <div className="space-y-3 max-h-[calc(100vh-400px)] overflow-y-auto custom-scrollbar">
-                {shifts.filter(s => s.status === 'closed').length > 0 ? shifts.filter(s => s.status === 'closed').map(s => (
+                {closedShifts.length > 0 ? closedShifts.map(s => (
                     <div key={s.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                        <div className="flex justify-between items-center text-xs text-slate-400 font-bold mb-2">
                            <span>{new Date(s.startTime).toLocaleDateString('fa-IR')}</span>

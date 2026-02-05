@@ -244,8 +244,12 @@ export const useRestaurantStore = create<RestaurantStore>()(
           return { status: 'OK', insufficientItems: [] };
       }
 
-      const { inventoryDeductions, prepDeductions } = calculateDeductions(cart, inventory, prepTasks);
-      const { insufficientItems } = checkStockAvailability(inventory, prepTasks, inventoryDeductions, prepDeductions);
+      // Optimization: Pre-index inventory and prepTasks for O(1) lookups
+      const inventoryMap = new Map(inventory.map(i => [i.id, i]));
+      const prepMap = new Map(prepTasks.map(p => [p.id, p]));
+
+      const { inventoryDeductions, prepDeductions } = calculateDeductions(cart, inventoryMap, prepMap);
+      const { insufficientItems } = checkStockAvailability(inventoryMap, prepMap, inventoryDeductions, prepDeductions);
       
       if (insufficientItems.length > 0) {
           if (policy === 'BLOCK_SALE_IF_INSUFFICIENT') {
@@ -289,11 +293,13 @@ export const useRestaurantStore = create<RestaurantStore>()(
     generateTasksFromRules: () => {
         const { menu, inventory, sales, wasteRecords, managerTasks, addManagerTask } = get();
         const openTasks = managerTasks.filter(t => t.status === 'open' || t.status === 'in_progress');
+        const openTaskTitles = new Set(openTasks.map(t => t.title));
         let newTasksCreated = 0;
 
         const createTaskIfNotExists = (title: string, taskDraft: Omit<ManagerTask, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'title'>) => {
-            if (!openTasks.some(t => t.title === title)) {
+            if (!openTaskTitles.has(title)) {
                 addManagerTask({ ...taskDraft, title });
+                openTaskTitles.add(title); // Prevent creating same task multiple times in one run
                 newTasksCreated++;
             }
         };
@@ -350,9 +356,14 @@ export const useRestaurantStore = create<RestaurantStore>()(
     // Complex Business Logic
     processTransaction: (cart, paymentDetails) => {
       const { inventory, prepTasks, customers, settings, addAuditLogDetailed } = get();
+
+      // Optimization: Pre-index inventory and prepTasks for O(1) lookups
+      const inventoryMap = new Map(inventory.map(i => [i.id, i]));
+      const prepMap = new Map(prepTasks.map(p => [p.id, p]));
+
       let subtotal = 0;
       const saleItems: SaleItem[] = cart.map(cartItem => {
-          const itemCost = calculateRecipeCost(cartItem.item.recipe, inventory, prepTasks);
+          const itemCost = calculateRecipeCost(cartItem.item.recipe, inventoryMap, prepMap);
           subtotal += cartItem.item.price * cartItem.quantity;
           return { menuItemId: cartItem.item.id, quantity: cartItem.quantity, priceAtSale: cartItem.item.price, costAtSale: itemCost };
       });
@@ -455,10 +466,10 @@ export const useRestaurantStore = create<RestaurantStore>()(
       };
 
       try {
-          const { inventoryDeductions, prepDeductions } = calculateDeductions(cart, inventory, prepTasks);
+          const { inventoryDeductions, prepDeductions } = calculateDeductions(cart, inventoryMap, prepMap);
 
           if (settings.stockDeductionPolicy === 'BLOCK_SALE_IF_INSUFFICIENT') {
-              const { insufficientItems } = checkStockAvailability(inventory, prepTasks, inventoryDeductions, prepDeductions);
+              const { insufficientItems } = checkStockAvailability(inventoryMap, prepMap, inventoryDeductions, prepDeductions);
               if (insufficientItems.length > 0) {
                   const itemNames = insufficientItems.map(i => i.name).join(', ');
                   throw new Error(`فروش مسدود است. موجودی برای "${itemNames}" کافی نیست.`);

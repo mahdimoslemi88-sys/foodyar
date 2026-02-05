@@ -4,25 +4,28 @@ import { RecipeIngredient, Ingredient, PrepTask, getConversionFactor, MenuItem, 
 /**
  * Calculates the deductions needed from inventory and prep tasks for a sale.
  * @param cart - The items and quantities in the current sale.
- * @param inventory - The current state of the inventory.
- * @param prepTasks - The current state of prepared items.
+ * @param inventory - The current state of the inventory (Array or Map for O(1) lookup).
+ * @param prepTasks - The current state of prepared items (Array or Map for O(1) lookup).
  * @returns An object with two maps: `inventoryDeductions` and `prepDeductions`.
  * @throws An error if a unit conversion is not possible.
  */
 export const calculateDeductions = (
   cart: { item: MenuItem, quantity: number }[],
-  inventory: readonly Ingredient[],
-  prepTasks: readonly PrepTask[]
+  inventory: readonly Ingredient[] | Map<string, Ingredient>,
+  prepTasks: readonly PrepTask[] | Map<string, PrepTask>
 ): { inventoryDeductions: Map<string, number>, prepDeductions: Map<string, number> } => {
   const inventoryDeductions = new Map<string, number>();
   const prepDeductions = new Map<string, number>();
+
+  const inventoryMap = inventory instanceof Map ? inventory : null;
+  const prepMap = prepTasks instanceof Map ? prepTasks : null;
 
   cart.forEach(cartItem => {
     cartItem.item.recipe.forEach(recipeIngredient => {
       const totalQuantityToDeduct = recipeIngredient.amount * cartItem.quantity;
 
       if (recipeIngredient.source === 'prep') {
-        const prepItem = prepTasks.find(p => p.id === recipeIngredient.ingredientId);
+        const prepItem = prepMap ? prepMap.get(recipeIngredient.ingredientId) : (prepTasks as readonly PrepTask[]).find(p => p.id === recipeIngredient.ingredientId);
         if (prepItem) {
           const factor = getConversionFactor(recipeIngredient.unit, prepItem.unit);
           if (factor === null) {
@@ -33,7 +36,7 @@ export const calculateDeductions = (
           prepDeductions.set(recipeIngredient.ingredientId, currentDeduction + amountInBaseUnit);
         }
       } else { // 'inventory'
-        const inventoryItem = inventory.find(i => i.id === recipeIngredient.ingredientId);
+        const inventoryItem = inventoryMap ? inventoryMap.get(recipeIngredient.ingredientId) : (inventory as readonly Ingredient[]).find(i => i.id === recipeIngredient.ingredientId);
         if (inventoryItem) {
           const factor = getConversionFactor(recipeIngredient.unit, inventoryItem.usageUnit);
           if (factor === null) {
@@ -51,15 +54,18 @@ export const calculateDeductions = (
 };
 
 export const checkStockAvailability = (
-    inventory: readonly Ingredient[],
-    prepTasks: readonly PrepTask[],
+    inventory: readonly Ingredient[] | Map<string, Ingredient>,
+    prepTasks: readonly PrepTask[] | Map<string, PrepTask>,
     inventoryDeductions: Map<string, number>,
     prepDeductions: Map<string, number>
 ): { insufficientItems: InsufficientItem[] } => {
     const insufficientItems: InsufficientItem[] = [];
 
+    const inventoryMap = inventory instanceof Map ? inventory : null;
+    const prepMap = prepTasks instanceof Map ? prepTasks : null;
+
     inventoryDeductions.forEach((required, id) => {
-        const item = inventory.find(i => i.id === id);
+        const item = inventoryMap ? inventoryMap.get(id) : (inventory as readonly Ingredient[]).find(i => i.id === id);
         if (item && item.currentStock < required) {
             insufficientItems.push({
                 id,
@@ -73,7 +79,7 @@ export const checkStockAvailability = (
     });
 
     prepDeductions.forEach((required, id) => {
-        const item = prepTasks.find(p => p.id === id);
+        const item = prepMap ? prepMap.get(id) : (prepTasks as readonly PrepTask[]).find(p => p.id === id);
         if (item && item.onHand < required) {
             insufficientItems.push({
                 id,
