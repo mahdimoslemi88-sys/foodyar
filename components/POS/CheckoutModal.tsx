@@ -78,9 +78,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, c
 
     const loyaltySettings = settings.loyaltySettings;
 
-    const subtotal = cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
-    const taxAmount = Math.round(subtotal * (settings.taxRate / 100));
-    const manualDiscount = discountType === 'percent' ? Math.round(subtotal * (discountValue / 100)) : discountValue;
+    const subtotal = useMemo(() => cart.reduce((sum, c) => sum + (c.item.price * c.quantity), 0), [cart]);
+    const taxAmount = useMemo(() => Math.round(subtotal * (settings.taxRate / 100)), [subtotal, settings.taxRate]);
+    const manualDiscount = useMemo(() =>
+        discountType === 'percent' ? Math.round(subtotal * (discountValue / 100)) : discountValue,
+        [subtotal, discountType, discountValue]
+    );
     
     const pointsDiscount = useMemo(() => {
         if (loyaltySettings?.enabled && loyaltySettings.programType === 'points' && identifiedCustomer && pointsToUse > 0) {

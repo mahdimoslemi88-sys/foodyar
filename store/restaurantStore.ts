@@ -214,12 +214,16 @@ export const useRestaurantStore = create<RestaurantStore>()(
             throw new Error('شیفت باز برای بستن یافت نشد.');
         }
 
-        const shiftSales = sales.filter(s => s.shiftId === shiftToClose.id);
-        const cashSales = shiftSales.filter(s => s.paymentMethod === 'cash').reduce((sum, s) => sum + s.totalAmount, 0);
-        const cardSales = shiftSales.filter(s => s.paymentMethod === 'card').reduce((sum, s) => sum + s.totalAmount, 0);
-        const onlineSales = shiftSales.filter(s => s.paymentMethod === 'online').reduce((sum, s) => sum + s.totalAmount, 0);
+        const totals = sales.reduce((acc, s) => {
+            if (s.shiftId === shiftToClose.id) {
+                if (s.paymentMethod === 'cash') acc.cash += s.totalAmount;
+                else if (s.paymentMethod === 'card') acc.card += s.totalAmount;
+                else if (s.paymentMethod === 'online') acc.online += s.totalAmount;
+            }
+            return acc;
+        }, { cash: 0, card: 0, online: 0 });
         
-        const expectedCashInDrawer = shiftToClose.startingCash + cashSales;
+        const expectedCashInDrawer = shiftToClose.startingCash + totals.cash;
         const discrepancy = actualCash - expectedCashInDrawer;
 
         const closedShift: Shift = {
@@ -227,8 +231,8 @@ export const useRestaurantStore = create<RestaurantStore>()(
             endTime: Date.now(),
             actualCashSales: actualCash,
             expectedCashSales: expectedCashInDrawer,
-            cardSales: cardSales,
-            onlineSales: onlineSales,
+            cardSales: totals.card,
+            onlineSales: totals.online,
             bankDeposit: bankDeposit,
             discrepancy: discrepancy,
             status: 'closed'
@@ -287,13 +291,15 @@ export const useRestaurantStore = create<RestaurantStore>()(
     },
 
     generateTasksFromRules: () => {
-        const { menu, inventory, sales, wasteRecords, managerTasks, addManagerTask } = get();
+        const { menu, inventory, sales, managerTasks, addManagerTask } = get();
         const openTasks = managerTasks.filter(t => t.status === 'open' || t.status === 'in_progress');
+        const openTaskTitles = new Set(openTasks.map(t => t.title));
         let newTasksCreated = 0;
 
         const createTaskIfNotExists = (title: string, taskDraft: Omit<ManagerTask, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'title'>) => {
-            if (!openTasks.some(t => t.title === title)) {
+            if (!openTaskTitles.has(title)) {
                 addManagerTask({ ...taskDraft, title });
+                openTaskTitles.add(title);
                 newTasksCreated++;
             }
         };
@@ -350,9 +356,13 @@ export const useRestaurantStore = create<RestaurantStore>()(
     // Complex Business Logic
     processTransaction: (cart, paymentDetails) => {
       const { inventory, prepTasks, customers, settings, addAuditLogDetailed } = get();
+
+      const inventoryMap = new Map(inventory.map(i => [i.id, i]));
+      const prepTasksMap = new Map(prepTasks.map(p => [p.id, p]));
+
       let subtotal = 0;
       const saleItems: SaleItem[] = cart.map(cartItem => {
-          const itemCost = calculateRecipeCost(cartItem.item.recipe, inventory, prepTasks);
+          const itemCost = calculateRecipeCost(cartItem.item.recipe, inventoryMap, prepTasksMap);
           subtotal += cartItem.item.price * cartItem.quantity;
           return { menuItemId: cartItem.item.id, quantity: cartItem.quantity, priceAtSale: cartItem.item.price, costAtSale: itemCost };
       });
@@ -365,6 +375,7 @@ export const useRestaurantStore = create<RestaurantStore>()(
       // --- CUSTOMER LOGIC ---
       if (paymentDetails.customerPhoneNumber) {
           const phone = paymentDetails.customerPhoneNumber;
+          // Optimization: Single pass find for customer
           let customer = customers.find(c => c.phoneNumber === phone);
           let isNewCustomer = false;
 
@@ -421,16 +432,17 @@ export const useRestaurantStore = create<RestaurantStore>()(
           // --- END LOYALTY LOGIC ---
           
           // --- Favorite Items & Segmentation ---
-          const updatedFavoriteItems = [...updatedCustomer.favoriteItems];
+          // Optimization: Use a Map for O(1) favorite items updates
+          const favMap = new Map(updatedCustomer.favoriteItems.map(f => [f.itemId, f]));
           saleItems.forEach(saleItem => {
-              const favItemIndex = updatedFavoriteItems.findIndex(fav => fav.itemId === saleItem.menuItemId);
-              if (favItemIndex > -1) {
-                  updatedFavoriteItems[favItemIndex].count += saleItem.quantity;
+              const existing = favMap.get(saleItem.menuItemId);
+              if (existing) {
+                  existing.count += saleItem.quantity;
               } else {
-                  updatedFavoriteItems.push({ itemId: saleItem.menuItemId, count: saleItem.quantity });
+                  favMap.set(saleItem.menuItemId, { itemId: saleItem.menuItemId, count: saleItem.quantity });
               }
           });
-          updatedCustomer.favoriteItems = updatedFavoriteItems;
+          updatedCustomer.favoriteItems = Array.from(favMap.values());
           updatedCustomer.segment = determineCustomerSegment(updatedCustomer);
 
           // --- Persist Customer Update ---
@@ -455,10 +467,11 @@ export const useRestaurantStore = create<RestaurantStore>()(
       };
 
       try {
-          const { inventoryDeductions, prepDeductions } = calculateDeductions(cart, inventory, prepTasks);
+          // Optimization: Pass pre-indexed Maps to domain functions
+          const { inventoryDeductions, prepDeductions } = calculateDeductions(cart, inventoryMap, prepTasksMap);
 
           if (settings.stockDeductionPolicy === 'BLOCK_SALE_IF_INSUFFICIENT') {
-              const { insufficientItems } = checkStockAvailability(inventory, prepTasks, inventoryDeductions, prepDeductions);
+              const { insufficientItems } = checkStockAvailability(inventoryMap, prepTasksMap, inventoryDeductions, prepDeductions);
               if (insufficientItems.length > 0) {
                   const itemNames = insufficientItems.map(i => i.name).join(', ');
                   throw new Error(`فروش مسدود است. موجودی برای "${itemNames}" کافی نیست.`);
