@@ -11,12 +11,19 @@ interface MenuCardViewProps {
 }
 
 export const MenuCardView: React.FC<MenuCardViewProps> = ({ menuItems, onEdit, onDelete }) => {
-    const { inventory, prepTasks } = useRestaurantStore.getState();
+    // BOLT OPTIMIZATION: Use selectors for reactivity and better performance
+    const inventory = useRestaurantStore(state => state.inventory);
+    const prepTasks = useRestaurantStore(state => state.prepTasks);
+
+    // BOLT OPTIMIZATION: Pre-index for O(1) lookups in the render loop
+    const inventoryMap = React.useMemo(() => new Map(inventory.map(i => [i.id, i])), [inventory]);
+    const prepMap = React.useMemo(() => new Map(prepTasks.map(p => [p.id, p])), [prepTasks]);
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {menuItems.map((item, index) => {
-                const cost = calculateRecipeCost(item.recipe, inventory, prepTasks);
+                // Pass maps for O(1) lookup inside calculateRecipeCost
+                const cost = calculateRecipeCost(item.recipe, inventoryMap, prepMap);
                 const margin = item.price - cost;
                 const marginPercent = item.price > 0 ? Math.round((margin / item.price) * 100) : 0;
                 

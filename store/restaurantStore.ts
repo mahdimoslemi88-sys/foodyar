@@ -350,9 +350,15 @@ export const useRestaurantStore = create<RestaurantStore>()(
     // Complex Business Logic
     processTransaction: (cart, paymentDetails) => {
       const { inventory, prepTasks, customers, settings, addAuditLogDetailed } = get();
+
+      // BOLT OPTIMIZATION: Pre-index for O(1) lookups during transaction processing
+      const inventoryMap = new Map(inventory.map(i => [i.id, i]));
+      const prepMap = new Map(prepTasks.map(p => [p.id, p]));
+
       let subtotal = 0;
       const saleItems: SaleItem[] = cart.map(cartItem => {
-          const itemCost = calculateRecipeCost(cartItem.item.recipe, inventory, prepTasks);
+          // Pass maps for O(1) lookup
+          const itemCost = calculateRecipeCost(cartItem.item.recipe, inventoryMap, prepMap);
           subtotal += cartItem.item.price * cartItem.quantity;
           return { menuItemId: cartItem.item.id, quantity: cartItem.quantity, priceAtSale: cartItem.item.price, costAtSale: itemCost };
       });
@@ -455,10 +461,11 @@ export const useRestaurantStore = create<RestaurantStore>()(
       };
 
       try {
-          const { inventoryDeductions, prepDeductions } = calculateDeductions(cart, inventory, prepTasks);
+          // Pass maps for O(1) lookup
+          const { inventoryDeductions, prepDeductions } = calculateDeductions(cart, inventoryMap, prepMap);
 
           if (settings.stockDeductionPolicy === 'BLOCK_SALE_IF_INSUFFICIENT') {
-              const { insufficientItems } = checkStockAvailability(inventory, prepTasks, inventoryDeductions, prepDeductions);
+              const { insufficientItems } = checkStockAvailability(inventoryMap, prepMap, inventoryDeductions, prepDeductions);
               if (insufficientItems.length > 0) {
                   const itemNames = insufficientItems.map(i => i.name).join(', ');
                   throw new Error(`فروش مسدود است. موجودی برای "${itemNames}" کافی نیست.`);

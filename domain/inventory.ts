@@ -11,18 +11,22 @@ import { RecipeIngredient, Ingredient, PrepTask, getConversionFactor, MenuItem, 
  */
 export const calculateDeductions = (
   cart: { item: MenuItem, quantity: number }[],
-  inventory: readonly Ingredient[],
-  prepTasks: readonly PrepTask[]
+  inventory: readonly Ingredient[] | Map<string, Ingredient>,
+  prepTasks: readonly PrepTask[] | Map<string, PrepTask>
 ): { inventoryDeductions: Map<string, number>, prepDeductions: Map<string, number> } => {
   const inventoryDeductions = new Map<string, number>();
   const prepDeductions = new Map<string, number>();
+
+  // Pre-index for O(1) lookups during the loop
+  const inventoryMap = inventory instanceof Map ? inventory : new Map(inventory.map(i => [i.id, i]));
+  const prepMap = prepTasks instanceof Map ? prepTasks : new Map(prepTasks.map(p => [p.id, p]));
 
   cart.forEach(cartItem => {
     cartItem.item.recipe.forEach(recipeIngredient => {
       const totalQuantityToDeduct = recipeIngredient.amount * cartItem.quantity;
 
       if (recipeIngredient.source === 'prep') {
-        const prepItem = prepTasks.find(p => p.id === recipeIngredient.ingredientId);
+        const prepItem = prepMap.get(recipeIngredient.ingredientId);
         if (prepItem) {
           const factor = getConversionFactor(recipeIngredient.unit, prepItem.unit);
           if (factor === null) {
@@ -33,7 +37,7 @@ export const calculateDeductions = (
           prepDeductions.set(recipeIngredient.ingredientId, currentDeduction + amountInBaseUnit);
         }
       } else { // 'inventory'
-        const inventoryItem = inventory.find(i => i.id === recipeIngredient.ingredientId);
+        const inventoryItem = inventoryMap.get(recipeIngredient.ingredientId);
         if (inventoryItem) {
           const factor = getConversionFactor(recipeIngredient.unit, inventoryItem.usageUnit);
           if (factor === null) {
@@ -51,15 +55,19 @@ export const calculateDeductions = (
 };
 
 export const checkStockAvailability = (
-    inventory: readonly Ingredient[],
-    prepTasks: readonly PrepTask[],
+    inventory: readonly Ingredient[] | Map<string, Ingredient>,
+    prepTasks: readonly PrepTask[] | Map<string, PrepTask>,
     inventoryDeductions: Map<string, number>,
     prepDeductions: Map<string, number>
 ): { insufficientItems: InsufficientItem[] } => {
     const insufficientItems: InsufficientItem[] = [];
 
+    // Pre-index for O(1) lookups
+    const inventoryMap = inventory instanceof Map ? inventory : new Map(inventory.map(i => [i.id, i]));
+    const prepMap = prepTasks instanceof Map ? prepTasks : new Map(prepTasks.map(p => [p.id, p]));
+
     inventoryDeductions.forEach((required, id) => {
-        const item = inventory.find(i => i.id === id);
+        const item = inventoryMap.get(id);
         if (item && item.currentStock < required) {
             insufficientItems.push({
                 id,
@@ -73,7 +81,7 @@ export const checkStockAvailability = (
     });
 
     prepDeductions.forEach((required, id) => {
-        const item = prepTasks.find(p => p.id === id);
+        const item = prepMap.get(id);
         if (item && item.onHand < required) {
             insufficientItems.push({
                 id,

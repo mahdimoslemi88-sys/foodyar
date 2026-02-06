@@ -1,0 +1,3 @@
+## 2025-05-15 - [O(N^2) to O(1) Map indexing for domain lookups]
+**Learning:** In applications with growing datasets (like sales and inventory), functions that perform nested array searches (e.g., `calculateRecipeCost` calling `inventory.find()`) become significant bottlenecks. This is especially true when these functions are called inside render loops or large-scale data aggregations for AI prompts.
+**Action:** Always pre-index frequently searched arrays into `Map` objects before entering a loop. Refactor domain functions to accept polymorphic arguments (Array or Map) to support both simple one-off calls and performance-critical bulk operations.

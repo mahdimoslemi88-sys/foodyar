@@ -5,24 +5,32 @@ import { getCostPerUsageUnit as getInventoryCostPerUsageUnit } from './costing';
 /**
  * Calculates the total cost of goods sold (COGS) for a given recipe.
  * @param recipe - The list of ingredients and their amounts.
- * @param inventory - The current state of the inventory.
- * @param prepTasks - The current state of prepared items.
+ * @param inventory - The current state of the inventory (Array or Map for O(1) lookup).
+ * @param prepTasks - The current state of prepared items (Array or Map for O(1) lookup).
  * @returns The calculated cost for one unit of the recipe.
  */
 export const calculateRecipeCost = (
   recipe: RecipeIngredient[],
-  inventory: readonly Ingredient[],
-  prepTasks: readonly PrepTask[]
+  inventory: readonly Ingredient[] | Map<string, Ingredient>,
+  prepTasks: readonly PrepTask[] | Map<string, PrepTask>
 ): number => {
   if (!recipe || recipe.length === 0) {
     return 0;
   }
 
+  const inventoryMap = inventory instanceof Map ? inventory : null;
+  const inventoryArray = Array.isArray(inventory) ? inventory : null;
+  const prepMap = prepTasks instanceof Map ? prepTasks : null;
+  const prepArray = Array.isArray(prepTasks) ? prepTasks : null;
+
   const totalCost = recipe.reduce((total, item) => {
     let itemCost = 0;
     
     if (item.source === 'prep') {
-      const prepItem = prepTasks.find(p => p.id === item.ingredientId);
+      const prepItem = prepMap
+        ? prepMap.get(item.ingredientId)
+        : (prepArray ? prepArray.find(p => p.id === item.ingredientId) : null);
+
       if (prepItem?.costPerUnit) {
         const factor = getConversionFactor(item.unit, prepItem.unit);
         if (factor !== null) {
@@ -32,7 +40,10 @@ export const calculateRecipeCost = (
         }
       }
     } else { // 'inventory'
-      const ing = inventory.find(i => i.id === item.ingredientId);
+      const ing = inventoryMap
+        ? inventoryMap.get(item.ingredientId)
+        : (inventoryArray ? inventoryArray.find(i => i.id === item.ingredientId) : null);
+
       if (ing) {
         const costPerUsageUnit = getInventoryCostPerUsageUnit(ing);
         const factor = getConversionFactor(item.unit, ing.usageUnit);
