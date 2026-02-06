@@ -13,7 +13,8 @@ interface MenuTableViewProps {
 }
 
 export const MenuTableView: React.FC<MenuTableViewProps> = ({ menuItems, selectedItems, setSelectedItems, onEdit, onDelete }) => {
-    const { inventory, prepTasks } = useRestaurantStore.getState();
+    const inventory = useRestaurantStore(state => state.inventory);
+    const prepTasks = useRestaurantStore(state => state.prepTasks);
 
     const toggleSelection = (itemId: string) => {
         setSelectedItems(prev => {

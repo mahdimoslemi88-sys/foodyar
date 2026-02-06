@@ -31,10 +31,13 @@ export const generateDailyBrief = (state: RestaurantState, targetDate: Date = ne
     
     const wasteLossLast7Days = wasteLast7DaysRecords.reduce((sum, w) => sum + w.costLoss, 0);
 
+    // Optimization: Pre-index menu for O(1) lookups
+    const menuMap = new Map(state.menu.map(m => [m.id, m]));
+
     const itemProfits: Record<string, number> = {};
     salesLast7Days.forEach(sale => {
         sale.items.forEach(item => {
-            const menuItem = state.menu.find(m => m.id === item.menuItemId);
+            const menuItem = menuMap.get(item.menuItemId);
             if (menuItem) {
                 // Using costAtSale for historical accuracy if available, otherwise recalculate
                 const profitPerItem = item.priceAtSale - item.costAtSale;
@@ -45,7 +48,7 @@ export const generateDailyBrief = (state: RestaurantState, targetDate: Date = ne
 
     const topProfitEntry = Object.entries(itemProfits).sort((a, b) => b[1] - a[1])[0];
     const topProfitItemLast7Days = topProfitEntry && topProfitEntry[1] > 0 ? {
-        item: state.menu.find(m => m.id === topProfitEntry[0])!,
+        item: menuMap.get(topProfitEntry[0])!,
         profit: topProfitEntry[1]
     } : null;
 
@@ -65,7 +68,7 @@ export const generateDailyBrief = (state: RestaurantState, targetDate: Date = ne
 
     const topSellingItemsToday = Object.entries(itemSalesCount)
         .map(([menuItemId, quantity]) => ({
-            item: state.menu.find(m => m.id === menuItemId)!,
+            item: menuMap.get(menuItemId)!,
             quantity
         }))
         .filter(i => i.item)
