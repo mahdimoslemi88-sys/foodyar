@@ -72,12 +72,16 @@ const createSystemInstruction = (state: FullState) => {
   const itemSalesQty = new Map<string, number>();
   const itemSalesProfit = new Map<string, number>();
 
+  const menuMap = new Map(menu.map(m => [m.id, m]));
+  const inventoryMap = new Map(inventory.map(i => [i.id, i]));
+  const prepMap = new Map(prepTasks.map(p => [p.id, p]));
+
   salesLast7Days.forEach(sale => {
       sale.items.forEach(item => {
-          const menuItem = menu.find(m => m.id === item.menuItemId);
+          const menuItem = menuMap.get(item.menuItemId);
           if (menuItem) {
               itemSalesQty.set(menuItem.name, (itemSalesQty.get(menuItem.name) || 0) + item.quantity);
-              const cost = calculateRecipeCost(menuItem.recipe, inventory, prepTasks);
+              const cost = calculateRecipeCost(menuItem.recipe, inventoryMap, prepMap);
               const profitPerItem = menuItem.price - cost;
               itemSalesProfit.set(menuItem.name, (itemSalesProfit.get(menuItem.name) || 0) + (profitPerItem * item.quantity));
           }
@@ -744,12 +748,20 @@ export const generateMenuEngineeringAnalysis = async (
     if (!apiKey) throw new Error("API Key Missing");
     const ai = new GoogleGenAI({ apiKey });
 
+    const inventoryMap = new Map(inventory.map(i => [i.id, i]));
+    const prepMap = new Map(prepTasks.map(p => [p.id, p]));
+
+    // Pre-aggregate sales by menuItemId
+    const salesByItem = new Map<string, number>();
+    sales.forEach(sale => {
+      sale.items.forEach(si => {
+        salesByItem.set(si.menuItemId, (salesByItem.get(si.menuItemId) || 0) + si.quantity);
+      });
+    });
+
     const salesData = menu.map(item => {
-      const salesCount = sales.reduce((acc, sale) => {
-        const saleItem = sale.items.find(si => si.menuItemId === item.id);
-        return acc + (saleItem ? saleItem.quantity : 0);
-      }, 0);
-      const cost = calculateRecipeCost(item.recipe, inventory, prepTasks);
+      const salesCount = salesByItem.get(item.id) || 0;
+      const cost = calculateRecipeCost(item.recipe, inventoryMap, prepMap);
       return { id: item.id, name: item.name, salesCount, profit: item.price - cost };
     });
 
