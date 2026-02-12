@@ -58,7 +58,7 @@ const checkRecipeIntegrity: CheckFunction = (state) => {
                     severity: 'high',
                     title: 'آیتم آماده‌سازی نامعتبر در دستور پخت',
                     description: `دستور پخت آیتم "${parentName}" به یک آیتم آماده‌سازی (Mise en place) اشاره دارد که حذف شده یا وجود ندارد.`,
-                    entityType: 'MENU', // Only menu items can source prep items
+                    entityType: parentType,
                     entityId: parentEntity.id,
                     entityName: parentName,
                     suggestedFix: 'دستور پخت آیتم را ویرایش کرده و آیتم آماده‌سازی نامعتبر را حذف یا با یک مورد موجود جایگزین کنید.'
@@ -74,7 +74,7 @@ const checkRecipeIntegrity: CheckFunction = (state) => {
                     severity: 'high',
                     title: 'ناسازگاری واحد رسپی و آماده‌سازی',
                     description: `در دستور پخت آیتم "${parentName}"، واحد مصرف "${ri.unit}" برای آیتم آماده‌سازی "${prepItem.item}" با واحد پایه آن ("${prepItem.unit}") قابل تبدیل نیست.`,
-                    entityType: 'MENU',
+                    entityType: parentType,
                     entityId: parentEntity.id,
                     entityName: parentName,
                     suggestedFix: `دستور پخت را ویرایش کرده و واحد مصرف را به یک واحد سازگار (مانند ${prepItem.unit}) تغییر دهید.`

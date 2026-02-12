@@ -4,7 +4,8 @@ import {
   Ingredient, MenuItem, Sale, Expense, Supplier, WasteRecord, Shift, PrepTask,
   PurchaseInvoice, AuditLog, AIRun, SaleItem, Customer, SystemSettings, User, 
   Transaction, PaymentMethod, ManagerTask, ManagerTaskStatus,
-  BackupData, View, ManagerTaskCategory, ManagerTaskPriority, ManagerTaskSource, InsufficientItem
+  BackupData, View, ManagerTaskCategory, ManagerTaskPriority, ManagerTaskSource, InsufficientItem,
+  OperationalForecast
 } from '../types';
 import * as defaultData from '../services/defaultData';
 import * as gemini from '../services/geminiService';
@@ -32,7 +33,7 @@ export interface RestaurantState {
   transactions: Transaction[];
   menuAnalysisRun: AIRun | null;
   procurementRun: AIRun | null;
-  operationalForecast: any | null; // This was not in scope for refactoring
+  operationalForecast: OperationalForecast | null;
   navigationIntent: { view: View; entityId?: string } | null;
 }
 

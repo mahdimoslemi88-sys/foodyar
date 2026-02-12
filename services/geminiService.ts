@@ -16,7 +16,7 @@ const CACHE_TTL_SECONDS = 3600; // 1 hour
 // Helper to safely get the API key
 const getApiKey = () => {
   // The AIView component ensures window.aistudio handles the selection before this is called
-  return process.env.API_KEY || '';
+  return process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
 };
 
 // Centralized error handler for Gemini API calls
@@ -218,7 +218,7 @@ export const generateRestaurantAdvice = async (
     const instruction = createSystemInstruction(state);
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-1.5-flash',
       contents: query,
       config: {
         systemInstruction: instruction,
@@ -316,7 +316,7 @@ export const generateManagerCopilotResponse = async (
         };
 
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-1.5-flash',
             contents: `User Query: "${query}"\nState Summary: ${stateSummary}`,
             config: {
                 systemInstruction,
@@ -370,7 +370,7 @@ export const explainDailyBrief = async (briefData: DailyBrief): Promise<string> 
         const prompt = `Here is today's brief:\n${JSON.stringify(simplifiedBrief, null, 2)}`;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-1.5-flash',
             contents: prompt,
             config: {
                 systemInstruction,
@@ -422,7 +422,7 @@ export const generateDailySpecial = async (
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-1.5-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -518,7 +518,7 @@ export const processSalesFile = async (
         `;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-1.5-flash',
             contents: prompt,
             config: {
                 systemInstruction,
@@ -597,7 +597,7 @@ export const analyzeRecipe = async (
     `;
 
     const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-1.5-flash',
         contents: prompt,
         config: {
             temperature: 0.8,
@@ -676,7 +676,7 @@ export const processInvoiceImage = async (
     };
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-image-preview',
+      model: 'gemini-1.5-flash',
       contents: { parts: [imagePart, textPart] },
       config: {
         responseMimeType: 'application/json',
@@ -763,7 +763,7 @@ export const generateMenuEngineeringAnalysis = async (
     const prompt = `Sales Data:\n${JSON.stringify(salesData)}`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-1.5-flash',
       contents: prompt,
       config: { systemInstruction, responseMimeType: 'application/json', responseSchema: aiRunSchema, temperature: 0.3 }
     });
@@ -819,7 +819,7 @@ export const generateProcurementForecast = async (
         `;
         
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-1.5-flash',
             contents: prompt,
             config: { systemInstruction, responseMimeType: 'application/json', responseSchema: aiRunSchema, temperature: 0.2 }
         });
@@ -891,7 +891,7 @@ export const generateOperationalForecast = async (
         `;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+        model: 'gemini-1.5-flash',
             contents: prompt,
             config: { systemInstruction, responseMimeType: 'application/json', responseSchema, temperature: 0.4 }
         });
